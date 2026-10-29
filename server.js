@@ -54,9 +54,17 @@ async function changeBalance(uid, delta) {
     if (cur + delta < 0) return null;
     const nv = round2(cur + delta); devBalances.set(uid, nv); return nv;
   }
+  // Check the real balance first, so a missing/low balance can never give a free bet
+  if (delta < 0) {
+    const real = await getBalance(uid);
+    if (real + delta < 0) return null;
+  }
   const res = await db.ref(`users/${uid}/balance`).transaction((cur) => {
+    // Firebase first calls this with null (before it has the real value).
+    // Aborting here would cancel the bet without a retry, so make a guess and let Firebase re-run with the real value.
+    if (cur === null && delta < 0) return 0;
     const prev = Number(cur || 0);
-    if (prev + delta < 0) return; // abort
+    if (prev + delta < 0) return; // abort (really not enough balance)
     return round2(prev + delta);
   });
   return res.committed ? Number(res.snapshot.val()) : null;
