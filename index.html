@@ -759,6 +759,32 @@
           }
         }
 
+        function showGameMsg(text) {
+          try {
+            let el = document.getElementById('gameMsgToast');
+            if (!el) {
+              el = document.createElement('div');
+              el.id = 'gameMsgToast';
+              el.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);background:rgba(15,23,42,.95);color:#fff;border:1px solid #f59e0b;padding:8px 14px;border-radius:10px;font:600 12px sans-serif;z-index:99999;max-width:90%;text-align:center;';
+              document.body.appendChild(el);
+            }
+            el.textContent = text;
+            el.style.display = 'block';
+            clearTimeout(el._t);
+            el._t = setTimeout(() => { el.style.display = 'none'; }, 3500);
+          } catch (e) {}
+        }
+        const ERR_TEXT = {
+          INSUFFICIENT_BALANCE: 'ব্যালেন্স যথেষ্ট নয়',
+          BETTING_CLOSED: 'এখন বাজি ধরার সময় নয়, পরের রাউন্ডের Countdown-এর অপেক্ষা করুন',
+          BAD_UID: 'ব্যবহারকারী চেনা যায়নি (uid নেই)',
+          BAD_INPUT: 'বাজির অঙ্ক ১০ থেকে ১০,০০০-এর মধ্যে হতে হবে',
+          ALREADY_PLACED: 'এই প্যানেলে বাজি আগেই ধরা হয়েছে',
+          AUTH_REQUIRED: 'লগইন প্রয়োজন',
+          UID_MISMATCH: 'uid মিলছে না',
+          BAD_TOKEN: 'লগইন টোকেন ভুল'
+        };
+
         // Attach verified wallet listener
         function attachWalletListener(uid, initialBal) {
           if (!uid) return;
@@ -862,7 +888,8 @@
           const nextSeq = (panels[panel].seq || 0) + 1;
           const idempotencyKey = `${round}_${currentUid || 'usr'}_p${panel}_bet_${nextSeq}`;
           if (processedKeys.has(idempotencyKey)) return false;
-          if (currentBalance < amount) return false;
+          if (!currentUid) { showGameMsg('ব্যবহারকারী চেনা যায়নি, User Panel থেকে Play Now দিয়ে খুলুন'); return false; }
+          if (currentBalance < amount) { showGameMsg('ব্যালেন্স যথেষ্ট নয় (গেমে দেখাচ্ছে ৳' + currentBalance.toFixed(2) + ')'); return false; }
 
           processedKeys.add(idempotencyKey);
 
@@ -888,10 +915,14 @@
               return true;
             } else {
               processedKeys.delete(idempotencyKey);
+              console.warn('BET FAILED', data);
+              showGameMsg(ERR_TEXT[data.error] || ('বাজি ব্যর্থ: ' + (data.error || 'unknown')));
               return false;
             }
           } catch(e) {
             processedKeys.delete(idempotencyKey);
+            console.warn('BET ERROR', e);
+            showGameMsg('সার্ভারে পৌঁছানো যাচ্ছে না, আবার চেষ্টা করুন');
             return false;
           }
         }
