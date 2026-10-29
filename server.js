@@ -24,6 +24,8 @@ const HOUSE_EDGE = Number(process.env.HOUSE_EDGE || 0.03);
 const MIN_BET = 10, MAX_BET = 10000;
 const MAX_PAYOUT = Number(process.env.MAX_PAYOUT || 200000);        // max win for a single bet
 const MAX_CRASH = 1000;
+// Round payout cap: when the total already paid out in a round reaches this % of the total bets of the round, the plane crashes at once. 0 = off.
+const PAYOUT_CAP_PERCENT = Number(process.env.PAYOUT_CAP_PERCENT || 80);
 
 // ---------- Balance store: Firebase RTDB (production) or memory (DEV only) ----------
 let admin = null, db = null, devMode = false;
@@ -69,6 +71,10 @@ async function changeBalance(uid, delta) {
   });
   return res.committed ? Number(res.snapshot.val()) : null;
 }
+function logRound(entry) {
+  if (devMode) return;
+  db.ref('game_rounds').push({ ...entry, time: Date.now() }).catch(() => {});
+}
 function logTx(entry) {
   if (devMode) return;
   db.ref('game_transactions').push({ ...entry, time: Date.now() }).catch(() => {});
@@ -79,6 +85,7 @@ const game = {
   status: 'WAITING', roundId: '', roundNo: 0,
   crashPoint: 1, startedAt: 0, flyStart: 0, crashedAt: 0,
   currentMultiplier: 1, history: [],
+  pool: 0, paid: 0, crashReason: 'RANDOM',   // total bets / total paid out in the current round
   bets: new Map(),            // `${uid}:${panel}` -> { uid, panel, amount, state: 'pending'|'active'|'cashed' }
   keys: new Map()             // idempotencyKey -> response
 };
@@ -98,6 +105,7 @@ function startWaiting() {
   game.currentMultiplier = 1;
   game.crashPoint = newCrashPoint();
   game.bets.clear();
+  game.pool = 0; game.paid = 0; game.crashReason = 'RANDOM';
   if (game.keys.size > 5000) game.keys.clear();
 }
 function startFlying() { game.status = 'FLYING'; game.flyStart = Date.now(); }
@@ -105,6 +113,16 @@ function crash() {
   game.status = 'CRASHED'; game.crashedAt = Date.now(); game.currentMultiplier = game.crashPoint;
   game.history.unshift(game.crashPoint); if (game.history.length > 20) game.history.pop();
   game.bets.forEach((b) => { if (b.state === 'active') logTx({ type: 'bet_lost', uid: b.uid, amount: b.amount, round: game.roundId, panel: b.panel }); });
+  const info = { round: game.roundId, crashPoint: game.crashPoint, pool: game.pool, paid: game.paid, reason: game.crashReason };
+  console.log('CRASH', JSON.stringify(info));
+  logRound(info);
+}
+// Crash right now because the payout cap of the round was reached
+function forceCrash(reason) {
+  if (game.status !== 'FLYING') return;
+  game.crashPoint = Math.max(1, multiplierAt(Date.now() - game.flyStart));
+  game.crashReason = reason;
+  crash();
 }
 
 function publicState() {
@@ -174,6 +192,7 @@ async function handleBet(req, body) {
   if (bal === null) { game.bets.delete(bk); return { success: false, error: 'INSUFFICIENT_BALANCE' }; }
   if (!b || game.roundId !== roundId) { await changeBalance(uid, amount); return { success: false, error: 'ROUND_CHANGED' }; }
   b.state = 'active';
+  game.pool = round2(game.pool + amount);
   logTx({ type: 'bet', uid, amount, round: roundId, panel });
   const res = { success: true, balance: bal };
   game.keys.set(key, res);
@@ -193,6 +212,7 @@ async function handleCancel(req, body) {
   const bal = await changeBalance(uid, amount);                           // refund the amount that was really charged
   if (bal === null) { b.state = 'active'; return { success: false, error: 'REFUND_FAILED' }; }
   game.bets.delete(bk);
+  game.pool = round2(Math.max(0, game.pool - amount));
   logTx({ type: 'bet_cancel', uid, amount, round: roundId, panel });
   const res = { success: true, balance: bal };
   game.keys.set(key, res);
@@ -215,6 +235,8 @@ async function handleCashout(req, body) {
   logTx({ type: 'cashout', uid, amount: b.amount, win, multiplier: m, round: game.roundId, panel });
   const res = { success: true, winAmount: win, multiplier: m, balance: bal };
   game.keys.set(key, res);
+  game.paid = round2(game.paid + win);
+  if (PAYOUT_CAP_PERCENT > 0 && game.status === 'FLYING' && game.paid >= game.pool * PAYOUT_CAP_PERCENT / 100) forceCrash('PAYOUT_CAP');
   return res;
 }
 
