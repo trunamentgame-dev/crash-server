@@ -817,6 +817,29 @@
             el._t = setTimeout(() => { el.style.display = 'none'; }, 3500);
           } catch (e) {}
         }
+        // Green banner on top of the screen: "Withdraw Success 125 ৳"
+        function showCashoutSuccess(amount) {
+          try {
+            const n = Number(amount) || 0;
+            const txt = n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+            let el = document.getElementById('cashoutSuccessBanner');
+            if (!el) {
+              el = document.createElement('div');
+              el.id = 'cashoutSuccessBanner';
+              el.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 8px);transform:translate(-50%,-140%);' +
+                'background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;padding:10px 22px;border-radius:12px;' +
+                "font:800 15px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.3px;z-index:100000;white-space:nowrap;" +
+                'box-shadow:0 6px 22px rgba(34,197,94,.45),inset 0 1px 0 rgba(255,255,255,.3);border:1px solid rgba(255,255,255,.25);' +
+                'transition:transform .3s ease;pointer-events:none;';
+              document.body.appendChild(el);
+            }
+            el.textContent = 'Withdraw Success ' + txt + ' ৳';
+            void el.offsetWidth;
+            el.style.transform = 'translate(-50%,0)';
+            clearTimeout(el._t);
+            el._t = setTimeout(() => { el.style.transform = 'translate(-50%,-140%)'; }, 2800);
+          } catch (e) {}
+        }
         const ERR_TEXT = {
           INSUFFICIENT_BALANCE: 'ব্যালেন্স যথেষ্ট নয়',
           BETTING_CLOSED: 'এখন বাজি ধরার সময় নয়, পরের রাউন্ডের Countdown-এর অপেক্ষা করুন',
@@ -980,7 +1003,10 @@
             } else {
               processedKeys.delete(idempotencyKey);
               console.warn('BET FAILED', data);
-              showGameMsg(ERR_TEXT[data.error] || ('বাজি ব্যর্থ: ' + (data.error || 'unknown')));
+              // "Betting time is over / wait for next round" notices are intentionally not shown
+              if (data.error !== 'BETTING_CLOSED' && data.error !== 'ROUND_CHANGED') {
+                showGameMsg(ERR_TEXT[data.error] || ('বাজি ব্যর্থ: ' + (data.error || 'unknown')));
+              }
               return false;
             }
           } catch(e) {
@@ -1053,6 +1079,7 @@
               st.mult = data.multiplier;
               if (typeof data.balance === 'number') updateBalanceUI(data.balance);
               updatePanelUI(panel);
+              showCashoutSuccess(data.winAmount);
             } else {
               // REJECTED (e.g. REJECTED_PAYOUT_LIMIT or round crashed)
               // STRICT RULE: No alert, no popup, no toast, no error message!
