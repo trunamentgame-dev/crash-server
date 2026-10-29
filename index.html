@@ -67,13 +67,46 @@
         z-index: 20;
       }
       .logo {
-        font-family: 'Brush Script MT', 'Arial Black', cursive, sans-serif;
-        font-size: 28px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        user-select: none;
+      }
+      .logo-badge {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        background: linear-gradient(145deg, #ff3b5c 0%, #d1002b 60%, #8f001d 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 14px rgba(255, 0, 56, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      .logo-badge svg { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)); }
+      .logo-text {
+        display: flex;
+        flex-direction: column;
+        line-height: 1;
+      }
+      .logo-word {
+        font-family: 'Segoe UI', system-ui, -apple-system, 'Arial Black', sans-serif;
+        font-size: 23px;
         font-weight: 900;
         font-style: italic;
+        letter-spacing: 0.5px;
+        background: linear-gradient(180deg, #ff5a78 0%, #ff0038 55%, #c4002a 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
         color: #ff0038;
-        letter-spacing: -1px;
-        text-shadow: 0 0 12px rgba(255, 0, 56, 0.6);
+        filter: drop-shadow(0 0 8px rgba(255, 0, 56, 0.45));
+      }
+      .logo-swoosh {
+        height: 2px;
+        margin-top: 3px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, #ff0038 0%, rgba(255, 0, 56, 0) 100%);
       }
       .header-right {
         display: flex;
@@ -439,7 +472,17 @@
     <div class="app-wrapper">
       <!-- Direct Play Header: Clean Aviator, Real Balance, Sound -->
       <header>
-        <div class="logo">Aviator</div>
+        <div class="logo" aria-label="Aviator">
+          <div class="logo-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#ffffff" xmlns="http://www.w3.org/2000/svg">
+              <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <span class="logo-word">Aviator</span>
+            <span class="logo-swoosh"></span>
+          </div>
+        </div>
         <div class="header-right">
           <div class="balance-pill" id="headerBalance">৳0.00</div>
           <button class="btn-sound" id="btnSound" title="Toggle Sound">
@@ -1344,9 +1387,10 @@
         let camZoom = 1;
         let bgSpeed = 0.25;
         let bgX = 0, bgY = 0;
+        let climb = 0;   // 0..1 : how far the plane has climbed (reaches 1 at 2.00x, then holds)
         let planeTilt = -0.32;
         const mod = (a, m) => ((a % m) + m) % m;
-        const bgStreaks = Array.from({ length: 16 }, () => ({
+        const bgStreaks = Array.from({ length: 30 }, () => ({
           x: Math.random(), y: Math.random(),
           len: 0.6 + Math.random() * 0.9,
           layer: 1.0 + Math.random() * 0.8
@@ -1375,8 +1419,15 @@
           const isFly = gameState === 'FLYING' || gameState === 'CRASHED';
           const lv = isFly ? Math.min(0.86, Math.log(Math.max(1, currentMultiplier)) / 3.2) : 0;
           camZoom += ((1 + lv * 0.32) - camZoom) * (gameState === 'WAITING' ? 0.1 : 0.05);
-          const spdTarget = gameState === 'FLYING' ? 0.6 + lv * 5 : (gameState === 'CRASHED' ? 0 : 0.25);
-          bgSpeed += (spdTarget - bgSpeed) * 0.04;
+          // Climb: 1.00x -> 2.00x the plane rises to 2/3 of the screen height, then holds there
+          if (gameState === 'WAITING') climb = 0;
+          else {
+            const pr = Math.max(0, Math.min(1, currentMultiplier - 1));
+            climb += ((1 - (1 - pr) * (1 - pr)) - climb) * 0.12;
+          }
+          // Once the plane has climbed, the background rushes backward fast (feels very fast)
+          const spdTarget = gameState === 'FLYING' ? 0.8 + climb * 3.5 + lv * 2.5 : (gameState === 'CRASHED' ? 0 : 0.25);
+          bgSpeed += (spdTarget - bgSpeed) * 0.06;
           bgX += bgSpeed;
           bgY += bgSpeed * 0.35;
           const camBegin = () => { ctx.save(); ctx.translate(0, h); ctx.scale(camZoom, camZoom); ctx.translate(0, -h); };
@@ -1388,9 +1439,10 @@
           // Perspective Rays
           ctx.save();
           ctx.fillStyle = 'rgba(255, 255, 255, 0.022)';
-          for (let i = 0; i < 24; i++) {
-            const t1 = (i / 24) * (Math.PI / 2);
-            const t2 = ((i + 0.45) / 24) * (Math.PI / 2);
+          const rayOff = mod(bgX * 0.003, 1);
+          for (let i = -1; i < 24; i++) {
+            const t1 = ((i - rayOff) / 24) * (Math.PI / 2);
+            const t2 = ((i - rayOff + 0.45) / 24) * (Math.PI / 2);
             ctx.beginPath();
             ctx.moveTo(-20, h + 20);
             ctx.lineTo(-20 + w * 1.8 * Math.cos(t1), (h + 20) - h * 1.8 * Math.sin(t1));
@@ -1404,10 +1456,10 @@
           const spanX = w + 160, spanY = h + 120;
           ctx.save();
           // Speed streaks fade in as speed rises
-          const streakA = Math.max(0, Math.min(0.22, (bgSpeed - 0.3) * 0.1));
+          const streakA = Math.max(0, Math.min(0.4, (bgSpeed - 0.3) * 0.12));
           if (streakA > 0.004) {
             ctx.strokeStyle = `rgba(255,255,255,${streakA})`;
-            ctx.lineWidth = 1.2;
+            ctx.lineWidth = 1.4;
             bgStreaks.forEach((st) => {
               const sx = mod(st.x * spanX - bgX * st.layer * 2.2, spanX) - 80;
               const sy = mod(st.y * spanY + bgY * st.layer * 2.2, spanY) - 60;
@@ -1429,18 +1481,57 @@
             drawAirplane(ctx, 52, runwayY, planeTilt, angleTick * 0.7);
             camEnd();
 
-            // Watermark (Aviator Official Game + Powered by MostWin88)
+            // Brand banner: MOSTWIN88 / OFFICIAL GAME EXPERIENCE
             ctx.save();
-            ctx.textAlign = 'center';
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 15px system-ui, sans-serif';
-            ctx.fillText('AVIATOR', w / 2, 35);
-            ctx.fillStyle = '#28a745';
-            ctx.font = 'bold 10px system-ui, sans-serif';
-            ctx.fillText('Official Game ✓', w / 2, 50);
-            ctx.fillStyle = '#f59e0b';
-            ctx.font = 'bold 9.5px system-ui, sans-serif';
-            ctx.fillText('Powered by MostWin88', w / 2, 64);
+            const cx = w / 2;
+            const spaced = (txt, x, y, gap) => {
+              // manual letter-spacing (works in every browser), centered on x
+              const chars = Array.from(txt);
+              const widths = chars.map((c) => ctx.measureText(c).width);
+              const total = widths.reduce((a, b) => a + b, 0) + gap * (chars.length - 1);
+              let px = x - total / 2;
+              ctx.textAlign = 'left';
+              chars.forEach((c, i) => { ctx.fillText(c, px, y); px += widths[i] + gap; });
+              return total;
+            };
+            ctx.textBaseline = 'alphabetic';
+
+            // Title: MOSTWIN88 (gold gradient + soft glow)
+            const titleSize = Math.max(20, Math.min(30, w * 0.075));
+            ctx.font = `900 ${titleSize}px 'Segoe UI', system-ui, -apple-system, sans-serif`;
+            const tg = ctx.createLinearGradient(0, 18, 0, 18 + titleSize);
+            tg.addColorStop(0, '#fff3b0');
+            tg.addColorStop(0.5, '#fbbf24');
+            tg.addColorStop(1, '#d97706');
+            ctx.fillStyle = tg;
+            ctx.shadowColor = 'rgba(251,191,36,0.55)';
+            ctx.shadowBlur = 14;
+            spaced('MOSTWIN88', cx, 18 + titleSize * 0.85, 3);
+            ctx.shadowBlur = 0;
+
+            // Subtitle: OFFICIAL GAME EXPERIENCE with decorative lines
+            const subY = 18 + titleSize * 0.85 + 21;
+            ctx.font = "600 9.5px 'Segoe UI', system-ui, -apple-system, sans-serif";
+            ctx.fillStyle = 'rgba(255,255,255,0.82)';
+            const subW = spaced('OFFICIAL GAME EXPERIENCE', cx, subY, 2.6);
+            const lineY = subY - 3.5;
+            const lineLen = Math.max(14, Math.min(46, (w - subW) / 2 - 22));
+            [-1, 1].forEach((dir) => {
+              const x0 = cx + dir * (subW / 2 + 9);
+              const x1 = x0 + dir * lineLen;
+              const lg = ctx.createLinearGradient(x0, 0, x1, 0);
+              lg.addColorStop(0, 'rgba(251,191,36,0.9)');
+              lg.addColorStop(1, 'rgba(251,191,36,0)');
+              ctx.strokeStyle = lg;
+              ctx.lineWidth = 1;
+              ctx.beginPath(); ctx.moveTo(x0, lineY); ctx.lineTo(x1, lineY); ctx.stroke();
+              // small diamond next to the text
+              const dx = cx + dir * (subW / 2 + 5);
+              ctx.fillStyle = '#fbbf24';
+              ctx.beginPath();
+              ctx.moveTo(dx, lineY - 2); ctx.lineTo(dx + 2, lineY); ctx.lineTo(dx, lineY + 2); ctx.lineTo(dx - 2, lineY);
+              ctx.closePath(); ctx.fill();
+            });
             ctx.restore();
 
             // Progress Bar
@@ -1475,15 +1566,16 @@
             // Desired on-screen position (kept inside the frame), converted to world
             // coordinates so that after the camera zoom the plane lands exactly there.
             const hover = gameState === 'FLYING' ? Math.sin(angleTick * 0.06) * 3 : 0;
-            const wantX = Math.min(w - 55, 52 + logVal * (w - 52 - 55)) + hover * 0.6;
-            const wantY = runwayY - Math.pow(logVal, 0.82) * (runwayY - 45) + hover;
+            const wantX = Math.min(w - 55, 52 + climb * (w * 0.6 - 52)) + hover * 0.6;
+            const wantY = runwayY - climb * (runwayY - h / 3) + hover;   // climb = 1 -> plane at 2/3 of the height
             const planeX = wantX / camZoom;
             const planeY = h + (wantY - h) / camZoom;
             const ctrlX = planeX * 0.52;
 
             // Nose follows the direction of the flight path (tangent of the trail at the plane)
             const tanAng = Math.atan2(planeY - h, planeX - ctrlX);
-            const tiltTarget = Math.max(-0.7, Math.min(-0.12, tanAng));
+            const levelOut = Math.max(0, Math.min(1, (climb - 0.8) / 0.2));
+            const tiltTarget = (Math.max(-0.7, Math.min(-0.12, tanAng))) * (1 - levelOut) + (-0.14) * levelOut;
             planeTilt += (tiltTarget - planeTilt) * 0.08;
 
             camBegin();
