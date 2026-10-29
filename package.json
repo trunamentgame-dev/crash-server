@@ -1,0 +1,9 @@
+{
+  "name": "aviator-server",
+  "version": "1.0.0",
+  "description": "Authoritative game server for the Aviator page (rounds, bets, cancel, cash out)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "firebase-admin": "^12.0.0" }
+}
