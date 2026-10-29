@@ -808,7 +808,7 @@
             if (!el) {
               el = document.createElement('div');
               el.id = 'gameMsgToast';
-              el.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);background:rgba(15,23,42,.95);color:#fff;border:1px solid #f59e0b;padding:8px 14px;border-radius:10px;font:600 12px sans-serif;z-index:99999;max-width:90%;text-align:center;';
+              el.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);background:rgba(15,23,42,.45);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);color:#fff;border:1px solid rgba(245,158,11,.7);padding:8px 14px;border-radius:10px;font:600 12px sans-serif;z-index:99999;max-width:90%;text-align:center;';
               document.body.appendChild(el);
             }
             el.textContent = text;
@@ -827,9 +827,9 @@
               el = document.createElement('div');
               el.id = 'cashoutSuccessBanner';
               el.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 8px);transform:translate(-50%,-140%);' +
-                'background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;padding:10px 22px;border-radius:12px;' +
+                'background:rgba(22,163,74,.38);-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);color:#fff;padding:10px 22px;border-radius:12px;text-shadow:0 1px 3px rgba(0,0,0,.5);' +
                 "font:800 15px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.3px;z-index:100000;white-space:nowrap;" +
-                'box-shadow:0 6px 22px rgba(34,197,94,.45),inset 0 1px 0 rgba(255,255,255,.3);border:1px solid rgba(255,255,255,.25);' +
+                'box-shadow:0 6px 22px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.3);' +
                 'transition:transform .3s ease;pointer-events:none;';
               document.body.appendChild(el);
             }
@@ -953,6 +953,21 @@
             updateBalanceUI(d.balance);
           }
         });
+
+        // Keep the phone screen awake while the game is open (Screen Wake Lock)
+        (function keepScreenAwake() {
+          let lock = null;
+          async function acquire() {
+            try {
+              if (!('wakeLock' in navigator) || document.visibilityState !== 'visible' || lock) return;
+              lock = await navigator.wakeLock.request('screen');
+              lock.addEventListener('release', () => { lock = null; });
+            } catch (e) { lock = null; }
+          }
+          acquire();
+          document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') acquire(); });
+          ['touchstart', 'click', 'keydown'].forEach((ev) => window.addEventListener(ev, acquire, { passive: true }));
+        })();
 
         // 4. Global State Synchronization via Server SSE / RTDB
         let gameState = 'WAITING'; // 'WAITING' | 'FLYING' | 'CRASHED'
