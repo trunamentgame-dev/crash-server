@@ -677,16 +677,16 @@
         let rtdb = null;
 
         try {
-          if (window.firebase) {
-            if (!firebase.apps.length) {
-              firebase.initializeApp(firebaseConfig);
-            }
-            auth = firebase.auth();
-            rtdb = firebase.database();
+          if (window.firebase && !firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
           }
         } catch (e) {
           console.warn('Firebase init note:', e);
         }
+        // Auth and Database are created separately: inside some mobile-app WebViews (e.g. DOM storage
+        // disabled) firebase.auth() can fail, and that must not also take the database listener down.
+        try { if (window.firebase && firebase.apps.length) auth = firebase.auth(); } catch (e) { console.warn('Firebase auth unavailable:', e); }
+        try { if (window.firebase && firebase.apps.length) rtdb = firebase.database(); } catch (e) { console.warn('Firebase database unavailable:', e); }
 
         // 2. Sound Engine (Web Audio Synth)
         class SoundEngine {
@@ -822,17 +822,29 @@
         let currentUid = null;
         let currentBalance = 0;
         let isAuthReady = false;
+        let balanceLoaded = false;   // true ONLY after a real balance was read from the server / Firebase
+        let uidSource = '';          // token | parent | firebase | url
+        let lastBalanceStatus = 'not-started';
+        // Identity priority: a verified login token beats everything; an unverified ?uid= in the URL is the weakest
+        const SRC_RANK = { url: 1, firebase: 2, parent: 3, token: 4 };
 
-        function updateBalanceUI(bal) {
-          currentBalance = typeof bal === 'number' ? bal : Number(bal || 0);
+        function setBalanceText(txt) {
           const el = document.getElementById('headerBalance');
-          if (el) {
-            el.innerText = '৳' + currentBalance.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2
-            });
-          }
+          if (el) el.innerText = txt;
         }
+
+        // provisional=true means "value handed over by the panel, not yet confirmed by the server"
+        function updateBalanceUI(bal, provisional) {
+          const n = typeof bal === 'number' ? bal : Number(bal || 0);
+          currentBalance = isFinite(n) ? n : 0;
+          if (!provisional) balanceLoaded = true;
+          setBalanceText('৳' + currentBalance.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+          }));
+        }
+        // Never show a fake ৳0.00 before the real balance is known
+        setBalanceText('৳--');
 
         function showGameMsg(text) {
           try {
@@ -860,108 +872,278 @@
           BAD_TOKEN: 'লগইন টোকেন ভুল'
         };
 
-        // Attach verified wallet listener
-        function attachWalletListener(uid, initialBal) {
-          if (!uid) return;
-          if (currentUid === uid && isAuthReady) return;
-          if (currentUid && rtdb) { try { rtdb.ref('users/' + currentUid + '/balance').off(); } catch (e) {} }
-          currentUid = uid;
-          isAuthReady = true;
+        // ---- Login token (Firebase ID token) handed over by the User Panel / mobile app ----
+        let gameIdToken = null;
+        let tokenUid = null;
+        let lastTokenRequest = 0;
 
-          if (typeof initialBal === 'number') {
-            updateBalanceUI(initialBal);
-          }
-
-          // Fetch authoritative server balance for uid
-          fetchUserBalance(uid);
-
-          // Direct live listener from Firebase RTDB (users/{uid}/balance)
-          if (rtdb) {
-            try {
-              rtdb.ref('users/' + uid + '/balance').on('value', (snap) => {
-                const val = snap.val();
-                if (val !== null) {
-                  const numVal = Number(val);
-                  updateBalanceUI(numVal);
-                }
-              }, (err) => {
-                console.warn('Firebase RTDB balance listen error:', err);
-              });
-            } catch(e) {
-              console.warn('Firebase attach error:', e);
-            }
-          }
+        function parseJwt(tok) {
+          try {
+            let s = String(tok).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+            while (s.length % 4) s += '=';
+            return JSON.parse(atob(s));
+          } catch (e) { return null; }
+        }
+        function tokenExpired(tok) {
+          const p = parseJwt(tok);
+          return !!(p && p.exp && p.exp * 1000 <= Date.now());
+        }
+        // Ask the host (panel iframe / native app WebView) for a fresh login token
+        function requestFreshToken() {
+          const now = Date.now();
+          if (now - lastTokenRequest < 10000) return;
+          lastTokenRequest = now;
+          try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'AVITOR_NEED_TOKEN' }, '*'); } catch (e) {}
+          try { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'AVITOR_NEED_TOKEN' })); } catch (e) {}
         }
 
-        // Login token handed over by the User Panel (URL hash: #t=...), sent to the server with every request
-        let gameIdToken = null;
-        function authHeaders(h) {
+        async function authHeaders(h) {
           const o = Object.assign({}, h || {});
-          if (gameIdToken) o['Authorization'] = 'Bearer ' + gameIdToken;
+          let tok = null;
+          // 1) A live Firebase session of the SAME user: the SDK refreshes the ID token automatically
+          try {
+            if (auth && auth.currentUser && currentUid && auth.currentUser.uid === currentUid) {
+              tok = await auth.currentUser.getIdToken();
+            }
+          } catch (e) {}
+          // 2) Token handed over by the panel / app (valid for 1 hour)
+          if (!tok && gameIdToken) {
+            if (tokenExpired(gameIdToken)) requestFreshToken();
+            tok = gameIdToken;
+          }
+          if (tok) o['Authorization'] = 'Bearer ' + tok;
           return o;
         }
-        (function readLoginToken() {
-          try {
-            const m = /[#&]t=([A-Za-z0-9._-]+)/.exec(window.location.hash || '');
-            if (!m) return;
-            gameIdToken = m[1];
-            history.replaceState(null, '', window.location.pathname + window.location.search);   // hide the token from the address bar
-            const payload = JSON.parse(atob(gameIdToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-            const tokUid = payload.user_id || payload.sub;
-            if (tokUid) attachWalletListener(tokUid);
-          } catch (e) { console.warn('Login token read failed', e); }
-        })();
-        // Keep the balance fresh (deposits / withdrawals made while the game is open)
-        setInterval(() => { if (currentUid) fetchUserBalance(currentUid); }, 15000);
 
-        async function fetchUserBalance(uid) {
-          try {
-            const target = uid || currentUid;
-            if (!target) return;
-            const res = await fetch(`${API_BASE}/api/user/balance?uid=${encodeURIComponent(target)}`, { headers: authHeaders() });
-            if (res.ok) {
-              const data = await res.json();
-              if (typeof data.balance === 'number') {
-                updateBalanceUI(data.balance);
-              }
-            }
-          } catch(e){}
+        function setLoginToken(tok) {
+          if (!tok || typeof tok !== 'string') return false;
+          const p = parseJwt(tok);
+          const uid = p && (p.user_id || p.sub);
+          if (!uid) return false;
+          if (tokenExpired(tok)) { requestFreshToken(); return false; }
+          gameIdToken = tok;
+          tokenUid = String(uid);
+          // Keep the session for reloads inside the same WebView (the #t= hash is removed from the URL)
+          try { sessionStorage.setItem('game_login_token', tok); } catch (e) {}
+          const sameUser = (currentUid === tokenUid);
+          attachWalletListener(tokenUid, undefined, 'token');
+          if (sameUser && !balanceLoaded) fetchUserBalance(tokenUid);   // new token for the same user: retry the balance now
+          return true;
         }
 
-        // 1. Immediate priority check: URL Query Parameters (?userId=... or ?uid=... or ?user=...)
+        // ---- Realtime Database live balance (users/{uid}/balance) ----
+        let walletRef = null;
+        let walletRefDenied = false;
+        function detachWalletListener() {
+          if (walletRef) { try { walletRef.off(); } catch (e) {} walletRef = null; }
+        }
+        function listenRtdbBalance(uid) {
+          if (!rtdb || !uid) return;
+          detachWalletListener();
+          try {
+            const ref = rtdb.ref('users/' + uid + '/balance');
+            walletRef = ref;
+            ref.on('value', (snap) => {
+              const val = snap.val();
+              if (val !== null && isFinite(Number(val))) updateBalanceUI(Number(val));
+            }, (err) => {
+              // Permission denied (no Firebase session yet): the listener is cancelled by Firebase.
+              // Remember it, so it is re-attached as soon as the Firebase login is restored. The server balance still works.
+              walletRef = null;
+              walletRefDenied = true;
+              console.warn('Firebase RTDB balance listen error:', err);
+            });
+          } catch (e) {
+            console.warn('Firebase attach error:', e);
+          }
+        }
+
+        // Attach verified wallet listener
+        function attachWalletListener(uid, initialBal, source) {
+          if (!uid) return;
+          uid = String(uid);
+          source = source || 'url';
+          if (currentUid === uid && isAuthReady) {
+            if (typeof initialBal === 'number' && !balanceLoaded) updateBalanceUI(initialBal, true);
+            return;
+          }
+          // A weaker (less trustworthy) source must never replace an identity that is already established
+          if (currentUid && (SRC_RANK[source] || 0) < (SRC_RANK[uidSource] || 0)) {
+            console.warn('Ignored uid from weaker source:', source);
+            return;
+          }
+          detachWalletListener();
+          currentUid = uid;
+          uidSource = source;
+          isAuthReady = true;
+          balanceLoaded = false;
+          currentBalance = 0;
+          setBalanceText('৳ ...');
+          if (typeof initialBal === 'number') updateBalanceUI(initialBal, true);
+
+          // Fetch authoritative server balance for uid (with automatic retries: cold start / slow mobile network)
+          fetchUserBalance(uid).then((r) => { if (!r.ok && r.reason !== 'AUTH') scheduleBalanceRetry(uid, 1); });
+          listenRtdbBalance(uid);
+        }
+
+        function scheduleBalanceRetry(uid, n) {
+          if (n > 6) return;
+          setTimeout(async () => {
+            if (uid !== currentUid || balanceLoaded) return;
+            const r = await fetchUserBalance(uid);
+            if (!r.ok && r.reason !== 'AUTH') scheduleBalanceRetry(uid, n + 1);
+          }, Math.min(2000 * n, 8000));
+        }
+
+        // Keep the balance fresh (deposits / withdrawals made while the game is open)
+        setInterval(() => { if (currentUid) fetchUserBalance(currentUid); }, 15000);
+        // Mobile apps: refresh when the app comes back to the foreground / network returns
+        document.addEventListener('visibilitychange', () => { if (!document.hidden && currentUid) fetchUserBalance(currentUid); });
+        window.addEventListener('online', () => { if (currentUid) fetchUserBalance(currentUid); });
+
+        // Returns {ok:true,balance} or {ok:false,reason:'AUTH'|'SERVER'|'NETWORK'|'NO_UID'|'STALE',error?}
+        async function fetchUserBalance(uid) {
+          const target = uid || currentUid;
+          if (!target) { lastBalanceStatus = 'no-uid'; return { ok: false, reason: 'NO_UID' }; }
+          try {
+            const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            const timer = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
+            let res;
+            try {
+              res = await fetch(`${API_BASE}/api/user/balance?uid=${encodeURIComponent(target)}`, {
+                headers: await authHeaders(),
+                cache: 'no-store',
+                signal: ctrl ? ctrl.signal : undefined
+              });
+            } finally { if (timer) clearTimeout(timer); }
+            if (target !== currentUid) return { ok: false, reason: 'STALE' };
+            if (res.status === 401 || res.status === 403) {
+              lastBalanceStatus = 'auth-' + res.status;
+              requestFreshToken();
+              return { ok: false, reason: 'AUTH' };
+            }
+            if (!res.ok) { lastBalanceStatus = 'http-' + res.status; return { ok: false, reason: 'SERVER' }; }
+            const data = await res.json();
+            const n = Number(data && data.balance);
+            if (data && data.balance !== null && data.balance !== undefined && data.balance !== '' && isFinite(n)) {
+              updateBalanceUI(n);
+              lastBalanceStatus = 'ok';
+              return { ok: true, balance: n };
+            }
+            lastBalanceStatus = 'no-balance:' + ((data && data.error) || '');
+            if (data && (data.error === 'AUTH_REQUIRED' || data.error === 'BAD_TOKEN')) { requestFreshToken(); return { ok: false, reason: 'AUTH', error: data.error }; }
+            return { ok: false, reason: 'SERVER', error: data && data.error };
+          } catch (e) {
+            lastBalanceStatus = 'network';
+            return { ok: false, reason: 'NETWORK' };
+          }
+        }
+
+        // Called before every bet: never says "insufficient balance" just because the balance has not loaded yet.
+        // A stale/zero local value is re-read from the server first; a real shortage is still rejected.
+        function walletProblemText(r) {
+          if (!currentUid) return 'ব্যবহারকারী চেনা যায়নি, অ্যাপের User Panel থেকে Play Now দিয়ে গেমটি আবার খুলুন';
+          if (r && r.reason === 'AUTH') return 'লগইন সেশন যাচাই হয়নি, অ্যাপ থেকে গেমটি আবার খুলুন';
+          if (r && r.error && ERR_TEXT[r.error]) return ERR_TEXT[r.error];
+          return 'ব্যালেন্স লোড করা যায়নি, ইন্টারনেট/সার্ভার সংযোগ দেখে আবার চেষ্টা করুন';
+        }
+        async function ensureBalanceReady(amount) {
+          if (!currentUid) return { ok: false, msg: walletProblemText(null) };
+          if (balanceLoaded && currentBalance >= amount) return { ok: true };
+          let last = null;
+          for (let i = 0; i < 2; i++) {
+            last = await fetchUserBalance(currentUid);
+            if (last.ok || last.reason === 'AUTH' || last.reason === 'STALE') break;
+          }
+          if (balanceLoaded && currentBalance >= amount) return { ok: true };
+          if (balanceLoaded) return { ok: false, msg: 'ব্যালেন্স যথেষ্ট নয় (আপনার ব্যালেন্স ৳' + currentBalance.toFixed(2) + ')' };
+          return { ok: false, msg: walletProblemText(last) };
+        }
+
+        // 1. Login token from the panel / app: URL hash (#t=...) or query (?t=...), else the copy saved for this WebView session
+        (function readLoginToken() {
+          try {
+            let tok = null;
+            const m = /[#&](?:t|token)=([A-Za-z0-9._-]+)/.exec(window.location.hash || '');
+            if (m) tok = m[1];
+            const qp = new URLSearchParams(window.location.search);
+            if (!tok) tok = qp.get('t') || qp.get('token');
+            if (tok) {
+              qp.delete('t'); qp.delete('token');
+              const qs = qp.toString();
+              history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));   // hide the token from the address bar
+            } else {
+              try { tok = sessionStorage.getItem('game_login_token'); } catch (e) {}
+            }
+            if (tok && !setLoginToken(tok)) { try { sessionStorage.removeItem('game_login_token'); } catch (e) {} }
+          } catch (e) { console.warn('Login token read failed', e); }
+        })();
+
+        // 2. URL Query Parameters (?userId=... or ?uid=... or ?user=...): unverified, weakest source
         const urlParams = new URLSearchParams(window.location.search);
         const urlUid = urlParams.get('userId') || urlParams.get('uid') || urlParams.get('user');
         if (urlUid) {
-          attachWalletListener(urlUid);
+          attachWalletListener(urlUid, undefined, 'url');
         }
 
-        // 2. Immediate check: Existing Firebase current user
-        if (auth && auth.currentUser && !auth.currentUser.isAnonymous && !currentUid) {
-          attachWalletListener(auth.currentUser.uid);
-        }
-
-        // 3. Firebase Auth state listener
+        // 3. Firebase Auth session (restored asynchronously inside a WebView)
         if (auth) {
-          auth.onAuthStateChanged((user) => {
-            if (user && !user.isAnonymous && !currentUid) {
-              attachWalletListener(user.uid);
-            }
-          });
+          try {
+            if (auth.currentUser && !auth.currentUser.isAnonymous) attachWalletListener(auth.currentUser.uid, undefined, 'firebase');
+            auth.onAuthStateChanged((user) => {
+              if (!user || user.isAnonymous) return;
+              attachWalletListener(user.uid, undefined, 'firebase');
+              if (walletRefDenied && currentUid === user.uid) { walletRefDenied = false; listenRtdbBalance(user.uid); }
+            });
+          } catch (e) { console.warn('Auth listener failed', e); }
         }
 
-        // 4. Parent Iframe Handshake (Tournament / MostWin platform integration)
+        // 4. Session handshake: parent iframe (panel), Android/iOS WebView injection, React Native WebView
+        function handleSessionMessage(d) {
+          if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return; } }
+          if (!d || !d.type) return;
+          if (d.type === 'SET_USER_SESSION') {
+            if (d.token) setLoginToken(d.token);   // a verified token decides the user
+            if (d.uid && !(tokenUid && String(d.uid) !== tokenUid)) {
+              attachWalletListener(d.uid, typeof d.balance === 'number' ? d.balance : undefined, 'parent');
+            }
+          } else if (d.type === 'SET_TOKEN' && d.token) {
+            setLoginToken(d.token);
+          } else if (d.type === 'SET_BALANCE' && typeof d.balance === 'number') {
+            updateBalanceUI(d.balance, true);   // provisional; replaced by the server/Firebase value
+          }
+        }
+        // For native apps: webView.evaluateJavascript("window.setGameSession({uid:'..',token:'..'})", null)
+        window.setGameSession = function (s) { handleSessionMessage(Object.assign({ type: 'SET_USER_SESSION' }, s || {})); };
+
         if (window.parent && window.parent !== window) {
           window.parent.postMessage({ type: 'AVITOR_READY' }, '*');
         }
+        try { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'AVITOR_READY' })); } catch (e) {}
         window.addEventListener('message', (event) => {
-          const d = event.data;
-          if (!d || !d.type) return;
-          if (d.type === 'SET_USER_SESSION' && d.uid) {
-            attachWalletListener(d.uid, d.balance);
-          } else if (d.type === 'SET_BALANCE' && typeof d.balance === 'number') {
-            updateBalanceUI(d.balance);
-          }
+          // only the embedding panel, the app itself or the opener may hand over a session
+          if (event.source && event.source !== window.parent && event.source !== window && event.source !== window.opener) return;
+          handleSessionMessage(event.data);
         });
+        document.addEventListener('message', (event) => handleSessionMessage(event.data));   // React Native WebView (Android)
+        setTimeout(() => { if (!currentUid) requestFreshToken(); }, 1500);
+
+        // Optional on-screen diagnostics for phones: open the game with ?gamedebug=1
+        if (new URLSearchParams(window.location.search).get('gamedebug') === '1') {
+          const dbg = document.createElement('div');
+          dbg.style.cssText = 'position:fixed;left:4px;bottom:4px;z-index:99999;background:rgba(0,0,0,.85);color:#0f0;font:10px monospace;padding:6px;border-radius:6px;max-width:92%;white-space:pre-wrap;pointer-events:none;';
+          document.body.appendChild(dbg);
+          setInterval(() => {
+            const p = gameIdToken ? parseJwt(gameIdToken) : null;
+            dbg.textContent = [
+              'uid: ' + (currentUid ? currentUid.slice(0, 6) + '…' : 'NONE') + ' (' + (uidSource || '-') + ')',
+              'token: ' + (!gameIdToken ? 'none' : (tokenExpired(gameIdToken) ? 'EXPIRED' : 'ok' + (p && p.exp ? ' exp ' + new Date(p.exp * 1000).toLocaleTimeString() : ''))),
+              'firebase auth: ' + (auth ? (auth.currentUser ? 'user ' + auth.currentUser.uid.slice(0, 6) + '…' : 'no session') : 'unavailable') + ' | rtdb: ' + (rtdb ? (walletRefDenied ? 'denied' : 'ok') : 'unavailable'),
+              'balance loaded: ' + balanceLoaded + ' (' + currentBalance + ') | last fetch: ' + lastBalanceStatus
+            ].join('\n');
+          }, 1000);
+        }
+
 
         // 4. Global State Synchronization via Server SSE / RTDB
         let gameState = 'WAITING'; // 'WAITING' | 'FLYING' | 'CRASHED'
@@ -984,17 +1166,21 @@
           const nextSeq = (panels[panel].seq || 0) + 1;
           const idempotencyKey = `${round}_${currentUid || 'usr'}_p${panel}_bet_${nextSeq}`;
           if (processedKeys.has(idempotencyKey)) return false;
-          if (!currentUid) { showGameMsg('ব্যবহারকারী চেনা যায়নি, User Panel থেকে Play Now দিয়ে খুলুন'); return false; }
-          if (currentBalance < amount) { showGameMsg('ব্যালেন্স যথেষ্ট নয় (গেমে দেখাচ্ছে ৳' + currentBalance.toFixed(2) + ')'); return false; }
+          if (!currentUid) { showGameMsg(walletProblemText(null)); requestFreshToken(); return false; }
+          const betUid = currentUid;
+          // Wait for the real balance (never reject only because it has not loaded yet)
+          const ready = await ensureBalanceReady(amount);
+          if (!ready.ok) { showGameMsg(ready.msg); return false; }
+          if (betUid !== currentUid) return false;
 
           processedKeys.add(idempotencyKey);
 
           try {
             const res = await fetch(API_BASE + '/api/game/bet', {
               method: 'POST',
-              headers: authHeaders({ 'Content-Type': 'application/json' }),
+              headers: await authHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
-                uid: currentUid || 'guest',
+                uid: betUid,
                 panel,
                 amount,
                 idempotencyKey,
@@ -1012,6 +1198,8 @@
             } else {
               processedKeys.delete(idempotencyKey);
               console.warn('BET FAILED', data);
+              if (data.error === 'AUTH_REQUIRED' || data.error === 'BAD_TOKEN') requestFreshToken();
+              if (data.error === 'INSUFFICIENT_BALANCE') fetchUserBalance(currentUid);   // show the real balance
               showGameMsg(ERR_TEXT[data.error] || ('বাজি ব্যর্থ: ' + (data.error || 'unknown')));
               return false;
             }
@@ -1027,6 +1215,7 @@
         async function executeCancelTransaction(panel, round) {
           const st = panels[panel];
           const refund = st.betAmount || st.amount;
+          if (!currentUid) return false;
           const idempotencyKey = `${round}_${currentUid || 'usr'}_p${panel}_cancel_${st.seq}`;
           if (processedKeys.has(idempotencyKey)) return false;
           processedKeys.add(idempotencyKey);
@@ -1034,9 +1223,9 @@
           try {
             const res = await fetch(API_BASE + '/api/game/cancel', {
               method: 'POST',
-              headers: authHeaders({ 'Content-Type': 'application/json' }),
+              headers: await authHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
-                uid: currentUid || 'guest',
+                uid: currentUid,
                 panel,
                 amount: refund,
                 round,
@@ -1059,6 +1248,7 @@
         }
 
         async function executeCashoutTransaction(panel, round) {
+          if (!currentUid) return;
           const idempotencyKey = `${round}_${currentUid || 'usr'}_p${panel}_cashout`;
           if (processedKeys.has(idempotencyKey)) return;
           processedKeys.add(idempotencyKey);
@@ -1066,9 +1256,9 @@
           try {
             const res = await fetch(API_BASE + '/api/game/cashout', {
               method: 'POST',
-              headers: authHeaders({ 'Content-Type': 'application/json' }),
+              headers: await authHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
-                uid: currentUid || 'guest',
+                uid: currentUid,
                 panel,
                 idempotencyKey
               })
