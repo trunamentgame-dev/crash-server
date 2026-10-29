@@ -33,6 +33,12 @@ const EMPTY_TABLE_EDGE = Number(process.env.EMPTY_TABLE_EDGE || 0.03);
 // the plane crashes at once. 0 = off.
 const PAYOUT_CAP_PERCENT = Number(process.env.PAYOUT_CAP_PERCENT || 80);
 
+// ---------- Rate limits (per IP, per minute) ----------
+const RATE_GENERAL = Number(process.env.RATE_GENERAL || 120);       // normal requests (state, balance ...)
+const RATE_ACTION = Number(process.env.RATE_ACTION || 60);          // bet / cancel / cashout
+const MAX_SSE_PER_IP = Number(process.env.MAX_SSE_PER_IP || 5);     // live connections (/api/game/events) at once
+const RATE_WINDOW_MS = 60000;
+
 // ---------- Balance store: Firebase RTDB (production) or memory (DEV only) ----------
 let admin = null, db = null, devMode = false;
 const devBalances = new Map();
@@ -256,6 +262,26 @@ async function handleCashout(req, body) {
 }
 
 // ---------- HTTP plumbing ----------
+// Real client IP. Behind Render's proxy the client is the first entry of X-Forwarded-For.
+function clientIp(req) {
+  const xf = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return xf || req.socket.remoteAddress || 'unknown';
+}
+const rateGeneral = new Map(), rateAction = new Map(), sseCount = new Map();
+// Fixed-window counter. Returns true if the request is allowed.
+function allow(map, ip, limit) {
+  const now = Date.now();
+  let e = map.get(ip);
+  if (!e || now >= e.reset) { e = { n: 0, reset: now + RATE_WINDOW_MS }; map.set(ip, e); }
+  e.n += 1;
+  return e.n <= limit;
+}
+setInterval(() => {                                                      // remove old entries (saves memory)
+  const now = Date.now();
+  [rateGeneral, rateAction].forEach((m) => m.forEach((e, ip) => { if (now >= e.reset) m.delete(ip); }));
+}, 60000).unref();
+const tooMany = (res) => { res.setHeader('Retry-After', '10'); send(res, 429, { success: false, error: 'RATE_LIMITED' }); };
+
 function cors(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes('*')) res.setHeader('Access-Control-Allow-Origin', '*');
@@ -276,12 +302,29 @@ const server = http.createServer(async (req, res) => {
   cors(req, res);
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   const url = new URL(req.url, 'http://x');
+  const ip = clientIp(req);
+  const isEvents = req.method === 'GET' && url.pathname === '/api/game/events';
+  const isAction = req.method === 'POST' && ['/api/game/bet', '/api/game/cancel', '/api/game/cashout'].includes(url.pathname);
+  if (url.pathname !== '/' && url.pathname !== '/health' && !isEvents) {
+    if (!allow(rateGeneral, ip, RATE_GENERAL)) return tooMany(res);
+    if (isAction && !allow(rateAction, ip, RATE_ACTION)) return tooMany(res);
+  }
   try {
     if (req.method === 'GET' && url.pathname === '/api/game/state') return send(res, 200, { state: publicState() });
-    if (req.method === 'GET' && url.pathname === '/api/game/events') {
+    if (isEvents) {
+      if ((sseCount.get(ip) || 0) >= MAX_SSE_PER_IP) return tooMany(res);
+      sseCount.set(ip, (sseCount.get(ip) || 0) + 1);
+      let released = false;
+      const release = () => {
+        if (released) return; released = true;
+        const n = (sseCount.get(ip) || 1) - 1;
+        if (n <= 0) sseCount.delete(ip); else sseCount.set(ip, n);
+        clients.delete(res);
+      };
+      req.on('close', release); res.on('close', release);
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
       res.write(`data: ${JSON.stringify({ state: publicState() })}\n\n`);
-      clients.add(res); req.on('close', () => clients.delete(res)); return;
+      clients.add(res); return;
     }
     if (req.method === 'GET' && url.pathname === '/api/user/balance') {
       const a = await resolveUid(req, url.searchParams.get('uid')); if (a.error) return send(res, 401, { success: false, error: a.error });
