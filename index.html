@@ -123,34 +123,6 @@
         font-size: 15px;
         font-variant-numeric: tabular-nums;
         box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        min-width: 90px;
-        justify-content: center;
-        transition: all 0.2s ease;
-      }
-      .balance-pill.loading {
-        color: #f59e0b;
-        border-color: rgba(245, 158, 11, 0.4);
-        font-size: 13px;
-        animation: pulseSlow 1.5s infinite;
-      }
-      @keyframes pulseSlow {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
-      }
-      .user-badge {
-        font-size: 10px;
-        padding: 2px 6px;
-        background: #1f222b;
-        border: 1px solid #333744;
-        border-radius: 6px;
-        color: #9ca3af;
-        max-width: 80px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
       }
       .btn-sound {
         background: #181a20;
@@ -541,8 +513,7 @@
           </div>
         </div>
         <div class="header-right">
-          <span class="user-badge" id="userBadge" style="display:none;" title="Logged in user"></span>
-          <div class="balance-pill loading" id="headerBalance">৳ লোড হচ্ছে...</div>
+          <div class="balance-pill" id="headerBalance">৳0.00</div>
           <button class="btn-sound" id="btnSound" title="Toggle Sound">
             <svg id="iconSoundOn" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/>
@@ -860,7 +831,6 @@
           currentBalance = typeof bal === 'number' ? bal : Number(bal || 0);
           const el = document.getElementById('headerBalance');
           if (el) {
-            el.classList.remove('loading');
             el.innerText = '৳' + currentBalance.toLocaleString('en-US', {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2
@@ -959,13 +929,6 @@
           if (token && typeof token === 'string') {
             gameIdToken = token.trim();
             try { sessionStorage.setItem('aviator_token', gameIdToken); } catch(e){}
-          }
-
-          // Show User Badge in UI
-          const uBadge = document.getElementById('userBadge');
-          if (uBadge) {
-            uBadge.style.display = 'inline-block';
-            uBadge.textContent = cleanUid.length > 8 ? cleanUid.substring(0, 7) + '…' : cleanUid;
           }
 
           if (typeof initialBal === 'number') {
@@ -1160,9 +1123,8 @@
             return false;
           }
 
-          // Guard 2: Ensure balance is actually loaded before falsely rejecting
-          if (!isBalanceLoaded) {
-            showGameMsg('ব্যালেন্স লোড হচ্ছে, অনুগ্রহ করে এক মুহূর্ত অপেক্ষা করুন...');
+          // Guard 2: Silently ensure balance is actually loaded before verifying
+          if (!isBalanceLoaded && currentUid) {
             await fetchUserBalance(currentUid);
           }
 
@@ -1631,7 +1593,7 @@
           ctx.scale(dpr, dpr);
           ctx.clearRect(0, 0, w, h);
 
-          // Deep Space Radial Background
+          // Deep Space Radial Background (Original)
           const bgGrad = ctx.createRadialGradient(w * 0.1, h * 0.9, 10, w * 0.5, h * 0.5, h * 0.9);
           bgGrad.addColorStop(0, '#210915');
           bgGrad.addColorStop(0.5, '#120815');
@@ -1658,9 +1620,9 @@
 
           camBegin();
 
-          // Perspective Rays
+          // Perspective Rays (Much lighter & faint)
           ctx.save();
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.022)';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.007)';
           const rayOff = mod(bgX * 0.003, 1);
           for (let i = -1; i < 24; i++) {
             const t1 = ((i - rayOff) / 24) * (Math.PI / 2);
@@ -1674,17 +1636,17 @@
           }
           ctx.restore();
 
-          // Speed streaks
+          // Speed streaks (Much lighter, softer, and subtle)
           const spanX = w + 160, spanY = h + 120;
           ctx.save();
-          const streakA = Math.max(0, Math.min(0.4, (bgSpeed - 0.3) * 0.12));
-          if (streakA > 0.004) {
-            ctx.strokeStyle = `rgba(255,255,255,${streakA})`;
-            ctx.lineWidth = 1.4;
+          const streakA = Math.max(0, Math.min(0.08, (bgSpeed - 0.3) * 0.035));
+          if (streakA > 0.001) {
+            ctx.strokeStyle = `rgba(255, 255, 255, ${streakA})`;
+            ctx.lineWidth = 0.85;
             bgStreaks.forEach((st) => {
               const sx = mod(st.x * spanX - bgX * st.layer * 2.2, spanX) - 80;
               const sy = mod(st.y * spanY + bgY * st.layer * 2.2, spanY) - 60;
-              const L = (20 + bgSpeed * 9) * st.len;
+              const L = (18 + bgSpeed * 6) * st.len;
               ctx.beginPath();
               ctx.moveTo(sx, sy);
               ctx.lineTo(sx + L, sy - L * 0.35);
