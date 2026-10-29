@@ -596,7 +596,7 @@
         };
 
         // Render server address (change this one line only, no trailing slash)
-        const API_BASE = 'https://crash-server-focb.onrender.com';
+        const API_BASE = 'https://YOUR-SERVER.onrender.com';
 
         let auth = null;
         let rtdb = null;
@@ -763,6 +763,7 @@
         function attachWalletListener(uid, initialBal) {
           if (!uid) return;
           if (currentUid === uid && isAuthReady) return;
+          if (currentUid && rtdb) { try { rtdb.ref('users/' + currentUid + '/balance').off(); } catch (e) {} }
           currentUid = uid;
           isAuthReady = true;
 
@@ -813,19 +814,15 @@
         }
 
         // 2. Immediate check: Existing Firebase current user
-        if (auth && auth.currentUser) {
+        if (auth && auth.currentUser && !auth.currentUser.isAnonymous && !currentUid) {
           attachWalletListener(auth.currentUser.uid);
         }
 
         // 3. Firebase Auth state listener
         if (auth) {
           auth.onAuthStateChanged((user) => {
-            if (user) {
+            if (user && !user.isAnonymous && !currentUid) {
               attachWalletListener(user.uid);
-            } else if (!urlUid && !currentUid) {
-              auth.signInAnonymously().then((cred) => {
-                if (cred && cred.user) attachWalletListener(cred.user.uid);
-              }).catch(()=>{});
             }
           });
         }
