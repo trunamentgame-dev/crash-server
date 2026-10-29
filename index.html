@@ -1,0 +1,1781 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Aviator</title>
+    <meta name="description" content="Aviator Crash Multiplier Game with Authoritative Global Round Synchronization and Realtime Payout Limit Protection" />
+    <meta property="og:title" content="Aviator" />
+    <meta property="og:description" content="Aviator Crash Multiplier Game with Authoritative Global Round Synchronization and Realtime Payout Limit Protection" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#0a0a0d" />
+
+    <!-- Firebase SDK (Compat version for zero-build GitHub Pages and RTDB integration) -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        background-color: #08090c;
+        color: #f3f4f6;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        overflow-x: hidden;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+      }
+      .app-wrapper {
+        width: 100%;
+        max-width: 460px;
+        background-color: #0e1014;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        border-left: 1px solid #1e2129;
+        border-right: 1px solid #1e2129;
+        position: relative;
+      }
+      @media (min-width: 480px) {
+        body { padding: 12px 8px; }
+        .app-wrapper {
+          min-height: auto;
+          border-radius: 24px;
+          border: 1px solid #22252e;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+          overflow: hidden;
+        }
+      }
+
+      /* Header */
+      header {
+        background-color: #101114;
+        border-bottom: 1px solid #22242a;
+        padding: 10px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        z-index: 20;
+      }
+      .logo {
+        font-family: 'Brush Script MT', 'Arial Black', cursive, sans-serif;
+        font-size: 28px;
+        font-weight: 900;
+        font-style: italic;
+        color: #ff0038;
+        letter-spacing: -1px;
+        text-shadow: 0 0 12px rgba(255, 0, 56, 0.6);
+      }
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .balance-pill {
+        background: #15171b;
+        border: 1px solid #2b2d35;
+        border-radius: 9999px;
+        padding: 4px 14px;
+        color: #28a745;
+        font-weight: 900;
+        font-size: 15px;
+        font-variant-numeric: tabular-nums;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+      }
+      .btn-sound {
+        background: #181a20;
+        border: 1px solid #2b2d35;
+        border-radius: 8px;
+        padding: 6px;
+        color: #9ca3af;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .btn-sound:hover { color: #fff; }
+
+      /* Multiplier History */
+      .history-bar {
+        background: #121316;
+        padding: 6px 10px;
+        border-bottom: 1px solid #21232a;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        overflow-x: auto;
+        white-space: nowrap;
+        scrollbar-width: none;
+      }
+      .history-bar::-webkit-scrollbar { display: none; }
+      .pill {
+        padding: 2px 8px;
+        border-radius: 9999px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: -0.2px;
+        font-variant-numeric: tabular-nums;
+        border: 1px solid transparent;
+        flex-shrink: 0;
+      }
+      .pill-low {
+        color: #38bdf8;
+        background: #142333;
+        border-color: rgba(56, 189, 248, 0.3);
+      }
+      .pill-mid {
+        color: #a855f7;
+        background: #231733;
+        border-color: rgba(168, 85, 247, 0.3);
+      }
+      .pill-high {
+        color: #e535ab;
+        background: #2a1325;
+        border-color: rgba(229, 53, 171, 0.3);
+      }
+
+      /* Flight Arena */
+      .arena-box {
+        position: relative;
+        margin: 10px;
+        border-radius: 16px;
+        overflow: hidden;
+        background: #0d0710;
+        border: 1px solid #231b26;
+        height: 230px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      }
+      @media (min-width: 400px) {
+        .arena-box { height: 260px; }
+      }
+      #flightCanvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+      .player-counter {
+        position: absolute;
+        bottom: 8px;
+        right: 8px;
+        background: rgba(21, 23, 29, 0.9);
+        border: 1px solid #2d303a;
+        border-radius: 9999px;
+        padding: 3px 8px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        font-weight: 700;
+        color: #fff;
+        z-index: 5;
+      }
+
+      /* Bet Panels */
+      .panels-container {
+        padding: 0 10px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .bet-card {
+        background: #181a20;
+        border: 1px solid #272a33;
+        border-radius: 16px;
+        padding: 10px 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      }
+      .tabs-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .tab-switch {
+        display: inline-flex;
+        background: #101216;
+        border: 1px solid #262832;
+        border-radius: 9999px;
+        padding: 2px;
+      }
+      .tab-btn {
+        background: none;
+        border: none;
+        color: #9ca3af;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 4px 18px;
+        border-radius: 9999px;
+        cursor: pointer;
+      }
+      .tab-btn.active {
+        background: #2b2e38;
+        color: #fff;
+      }
+      .card-grid {
+        display: grid;
+        grid-template-columns: 7fr 5fr;
+        gap: 8px;
+      }
+      .stepper-box {
+        display: flex;
+        align-items: center;
+        background: #101216;
+        border: 1px solid #262832;
+        border-radius: 12px;
+        padding: 3px;
+        margin-bottom: 6px;
+      }
+      .step-btn {
+        width: 32px;
+        height: 32px;
+        background: #22252e;
+        border: none;
+        border-radius: 8px;
+        color: #e5e7eb;
+        font-size: 16px;
+        font-weight: 800;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .step-btn:hover { background: #2c303c; }
+      .bet-val-display {
+        flex: 1;
+        text-align: center;
+        font-size: 14px;
+        font-weight: 900;
+        color: #fff;
+        font-variant-numeric: tabular-nums;
+      }
+      .presets-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+      }
+      .preset-btn {
+        background: #1e2027;
+        border: 1px solid #2c2f3a;
+        color: #d1d5db;
+        border-radius: 8px;
+        padding: 4px 0;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        text-align: center;
+      }
+      .preset-btn:hover { background: #262833; }
+      .preset-btn.active {
+        background: #373b47;
+        color: #fff;
+        border-color: #9ca3af;
+      }
+
+      /* Big Action Button */
+      .action-btn-col {
+        display: flex;
+      }
+      .btn-bet-action {
+        width: 100%;
+        border-radius: 16px;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 6px;
+        color: #fff;
+        transition: transform 0.05s ease, filter 0.1s ease;
+      }
+      .btn-bet-action:active { transform: scale(0.98); }
+      .btn-bet-green {
+        background: linear-gradient(180deg, #28a745 0%, #22c55e 50%, #16a34a 100%);
+        border: 1px solid rgba(74, 222, 128, 0.4);
+        box-shadow: 0 0 16px rgba(34, 197, 94, 0.35);
+      }
+      .btn-bet-red {
+        background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
+        border: 1px solid #ef4444;
+      }
+      .btn-cashout-orange {
+        background: linear-gradient(180deg, #f59e0b 0%, #ea580c 50%, #d97706 100%);
+        border: 1px solid #fcd34d;
+        box-shadow: 0 0 20px rgba(234, 88, 12, 0.5);
+      }
+      .btn-disabled {
+        background: linear-gradient(180deg, #28a745 0%, #16a34a 100%);
+        opacity: 0.35;
+        cursor: not-allowed;
+        pointer-events: none;
+      }
+      .cashed-out-box {
+        width: 100%;
+        background: #142e1d;
+        border: 1px solid rgba(16, 185, 129, 0.4);
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #34d399;
+        font-weight: 800;
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      /* Auto controls */
+      .auto-settings-bar {
+        margin-top: 8px;
+        padding-top: 6px;
+        border-top: 1px solid #262832;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 11px;
+      }
+      .auto-row {
+        display: flex;
+        gap: 12px;
+      }
+      .check-label {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        color: #d1d5db;
+        cursor: pointer;
+      }
+      .multiplier-stepper {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: #101216;
+        border: 1px solid #262832;
+        border-radius: 8px;
+        padding: 2px 6px;
+      }
+      .m-step-btn {
+        background: #22252e;
+        border: none;
+        color: #fff;
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+
+      /* Active Bets Table */
+      .table-card {
+        background: #14151a;
+        border: 1px solid #23262f;
+        border-radius: 16px;
+        padding: 10px;
+        margin: 0 10px 14px;
+      }
+      .table-header {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        font-weight: 700;
+        color: #9ca3af;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #22242d;
+      }
+      .table-rows {
+        max-height: 200px;
+        overflow-y: auto;
+        margin-top: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        scrollbar-width: none;
+      }
+      .table-rows::-webkit-scrollbar { display: none; }
+      .bet-row {
+        display: grid;
+        grid-template-columns: 5fr 3fr 2fr 3fr;
+        align-items: center;
+        font-size: 11px;
+        padding: 5px 8px;
+        border-radius: 8px;
+        background: #181a20;
+        border: 1px solid #23262f;
+      }
+      .bet-row.user-row {
+        background: #1e1c15;
+        border-color: rgba(251, 191, 36, 0.7);
+        color: #fef08a;
+      }
+      .bet-row.won-row {
+        background: #152a1c;
+        border-color: rgba(16, 185, 129, 0.3);
+      }
+      .provably-fair-tag {
+        margin-top: 8px;
+        padding-top: 6px;
+        border-top: 1px solid #20222a;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 10px;
+        color: #6b7280;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-wrapper">
+      <!-- Direct Play Header: Clean Aviator, Real Balance, Sound -->
+      <header>
+        <div class="logo">Aviator</div>
+        <div class="header-right">
+          <div class="balance-pill" id="headerBalance">৳0.00</div>
+          <button class="btn-sound" id="btnSound" title="Toggle Sound">
+            <svg id="iconSoundOn" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/>
+              <path d="M16 9a5 5 0 0 1 0 6"/>
+              <path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>
+            </svg>
+            <svg id="iconSoundOff" style="display:none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/>
+              <line x1="22" x2="16" y1="9" y2="15"/>
+              <line x1="16" x2="22" y1="9" y2="15"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Multiplier Pills Bar -->
+      <div class="history-bar" id="historyBar">
+        <span class="pill pill-low">1.20x</span>
+        <span class="pill pill-high">5.30x</span>
+        <span class="pill pill-mid">4.58x</span>
+        <span class="pill pill-low">1.98x</span>
+        <span class="pill pill-low">1.00x</span>
+        <span class="pill pill-mid">2.71x</span>
+        <span class="pill pill-high">9.94x</span>
+      </div>
+
+      <!-- 60FPS Flight Canvas Arena -->
+      <div class="arena-box">
+        <canvas id="flightCanvas"></canvas>
+        <div class="player-counter">
+          <span>👥</span>
+          <span id="playerCount">148</span>
+        </div>
+      </div>
+
+      <!-- Dual Bet Panels -->
+      <div class="panels-container">
+        <!-- Panel 1 -->
+        <div class="bet-card" id="cardPanel1">
+          <div class="tabs-row">
+            <div class="tab-switch">
+              <button class="tab-btn active" id="tabBet1">Bet</button>
+              <button class="tab-btn" id="tabAuto1">Auto</button>
+            </div>
+          </div>
+          <div class="card-grid">
+            <div>
+              <div class="stepper-box">
+                <button class="step-btn" id="btnMinus1">-</button>
+                <div class="bet-val-display" id="dispAmount1">৳10.00</div>
+                <button class="step-btn" id="btnPlus1">+</button>
+              </div>
+              <div class="presets-grid">
+                <button class="preset-btn active" data-p="1" data-val="10">৳10</button>
+                <button class="preset-btn" data-p="1" data-val="20">৳20</button>
+                <button class="preset-btn" data-p="1" data-val="50">৳50</button>
+                <button class="preset-btn" data-p="1" data-val="100">৳100</button>
+              </div>
+            </div>
+            <div class="action-btn-col">
+              <button class="btn-bet-action btn-bet-green" id="btnAction1">
+                <span id="actionTitle1" style="font-size: 13px;">BET</span>
+                <span id="actionAmount1" style="font-size: 16px; margin-top: 2px;">৳10.00</span>
+              </button>
+            </div>
+          </div>
+          <div class="auto-settings-bar" id="autoBar1" style="display:none;">
+            <div class="auto-row">
+              <label class="check-label"><input type="checkbox" id="chkAutoBet1"> Auto Bet</label>
+              <label class="check-label"><input type="checkbox" id="chkAutoCash1"> Auto Cash</label>
+            </div>
+            <div class="multiplier-stepper" id="autoCashBox1" style="display:none;">
+              <button class="m-step-btn" id="btnCashMinus1">-</button>
+              <span id="dispCashoutM1" style="font-weight:900; color:#fff;">2.00x</span>
+              <button class="m-step-btn" id="btnCashPlus1">+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel 2 -->
+        <div class="bet-card" id="cardPanel2">
+          <div class="tabs-row">
+            <div class="tab-switch">
+              <button class="tab-btn active" id="tabBet2">Bet</button>
+              <button class="tab-btn" id="tabAuto2">Auto</button>
+            </div>
+          </div>
+          <div class="card-grid">
+            <div>
+              <div class="stepper-box">
+                <button class="step-btn" id="btnMinus2">-</button>
+                <div class="bet-val-display" id="dispAmount2">৳10.00</div>
+                <button class="step-btn" id="btnPlus2">+</button>
+              </div>
+              <div class="presets-grid">
+                <button class="preset-btn active" data-p="2" data-val="10">৳10</button>
+                <button class="preset-btn" data-p="2" data-val="20">৳20</button>
+                <button class="preset-btn" data-p="2" data-val="50">৳50</button>
+                <button class="preset-btn" data-p="2" data-val="100">৳100</button>
+              </div>
+            </div>
+            <div class="action-btn-col">
+              <button class="btn-bet-action btn-bet-green" id="btnAction2">
+                <span id="actionTitle2" style="font-size: 13px;">BET</span>
+                <span id="actionAmount2" style="font-size: 16px; margin-top: 2px;">৳10.00</span>
+              </button>
+            </div>
+          </div>
+          <div class="auto-settings-bar" id="autoBar2" style="display:none;">
+            <div class="auto-row">
+              <label class="check-label"><input type="checkbox" id="chkAutoBet2"> Auto Bet</label>
+              <label class="check-label"><input type="checkbox" id="chkAutoCash2"> Auto Cash</label>
+            </div>
+            <div class="multiplier-stepper" id="autoCashBox2" style="display:none;">
+              <button class="m-step-btn" id="btnCashMinus2">-</button>
+              <span id="dispCashoutM2" style="font-weight:900; color:#fff;">2.00x</span>
+              <button class="m-step-btn" id="btnCashPlus2">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Online Bets Table -->
+      <div class="table-card">
+        <div class="table-header">
+          <span>PLAYER</span>
+          <span style="text-align:right;">BET (৳)</span>
+          <span style="text-align:center;">X</span>
+          <span style="text-align:right;">WIN (৳)</span>
+        </div>
+        <div class="table-rows" id="tableRows"></div>
+        <div class="provably-fair-tag">
+          <span style="color:#10b981;">🛡️ Provably Fair Game</span>
+          <span style="color:#f59e0b; font-weight:800; letter-spacing: 0.5px;">Powered by MostWin88</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Authoritative Global Engine Integration & UI Controller -->
+    <script>
+      (function () {
+        // 1. Firebase Project Initialization (RTDB integration for GitHub Pages & Live Sync)
+        const firebaseConfig = {
+          apiKey: "AIzaSyBFaoU_cDws6YVAXFMWBnogGAQHhjfC23Q",
+          authDomain: "np-trunament-bd.firebaseapp.com",
+          databaseURL: "https://np-trunament-bd-default-rtdb.firebaseio.com",
+          projectId: "np-trunament-bd",
+          storageBucket: "np-trunament-bd.firebasestorage.app",
+          messagingSenderId: "324972484501",
+          appId: "1:324972484501:web:38598aa922e983990b889c",
+          measurementId: "G-LMHCM7J1K5"
+        };
+
+        let auth = null;
+        let rtdb = null;
+
+        try {
+          if (window.firebase) {
+            if (!firebase.apps.length) {
+              firebase.initializeApp(firebaseConfig);
+            }
+            auth = firebase.auth();
+            rtdb = firebase.database();
+          }
+        } catch (e) {
+          console.warn('Firebase init note:', e);
+        }
+
+        // 2. Sound Engine (Web Audio Synth)
+        class SoundEngine {
+          constructor() {
+            this.ctx = null;
+            this.master = null;
+            this.osc1 = null;
+            this.osc2 = null;
+            this.isMuted = false;
+          }
+          init() {
+            if (this.ctx) {
+              if (this.ctx.state === 'suspended') this.ctx.resume().catch(()=>{});
+              return;
+            }
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) {
+              this.ctx = new AC();
+              this.master = this.ctx.createGain();
+              this.master.gain.setValueAtTime(this.isMuted ? 0 : 0.8, this.ctx.currentTime);
+              this.master.connect(this.ctx.destination);
+            }
+          }
+          toggleMute() {
+            this.isMuted = !this.isMuted;
+            if (this.master && this.ctx) {
+              this.master.gain.setValueAtTime(this.isMuted ? 0 : 0.8, this.ctx.currentTime);
+            }
+            return this.isMuted;
+          }
+          startEngine() {
+            if (this.isMuted) return;
+            try {
+              this.init();
+              if (!this.ctx || !this.master) return;
+              this.stopEngine();
+              const t = this.ctx.currentTime;
+              this.osc1 = this.ctx.createOscillator();
+              this.osc2 = this.ctx.createOscillator();
+              this.osc1.type = 'sawtooth';
+              this.osc1.frequency.setValueAtTime(75, t);
+              this.osc2.type = 'triangle';
+              this.osc2.frequency.setValueAtTime(110, t);
+
+              this.filter = this.ctx.createBiquadFilter();
+              this.filter.type = 'lowpass';
+              this.filter.frequency.setValueAtTime(350, t);
+
+              this.gain = this.ctx.createGain();
+              this.gain.gain.setValueAtTime(0.001, t);
+              this.gain.gain.exponentialRampToValueAtTime(0.12, t + 0.2);
+
+              this.osc1.connect(this.filter);
+              this.osc2.connect(this.filter);
+              this.filter.connect(this.gain);
+              this.gain.connect(this.master);
+
+              this.osc1.start(t);
+              this.osc2.start(t);
+            } catch(e){}
+          }
+          pitch(mult) {
+            if (this.isMuted || !this.ctx || !this.osc1) return;
+            try {
+              const t = this.ctx.currentTime;
+              const f = Math.min(380, 80 + Math.log(Math.max(1, mult)) * 65);
+              this.osc1.frequency.setTargetAtTime(f, t, 0.05);
+              if (this.osc2) this.osc2.frequency.setTargetAtTime(f * 1.5, t, 0.05);
+            } catch(e){}
+          }
+          stopEngine() {
+            try {
+              if (this.gain && this.ctx) {
+                const t = this.ctx.currentTime;
+                this.gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+              }
+              const o1 = this.osc1; const o2 = this.osc2;
+              setTimeout(() => {
+                if (o1) { o1.stop(); o1.disconnect(); }
+                if (o2) { o2.stop(); o2.disconnect(); }
+              }, 350);
+              this.osc1 = null; this.osc2 = null;
+            } catch(e){}
+          }
+          cashout() {
+            if (this.isMuted) return;
+            try {
+              this.init();
+              if (!this.ctx || !this.master) return;
+              const t = this.ctx.currentTime;
+              const osc = this.ctx.createOscillator();
+              const g = this.ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(587, t);
+              osc.frequency.exponentialRampToValueAtTime(880, t + 0.12);
+              g.gain.setValueAtTime(0.25, t);
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+              osc.connect(g);
+              g.connect(this.master);
+              osc.start(t);
+              osc.stop(t + 0.35);
+            } catch(e){}
+          }
+          crash() {
+            this.stopEngine();
+            if (this.isMuted) return;
+            try {
+              this.init();
+              if (!this.ctx || !this.master) return;
+              const t = this.ctx.currentTime;
+              const b = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.3, this.ctx.sampleRate);
+              const data = b.getChannelData(0);
+              for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+              const src = this.ctx.createBufferSource();
+              src.buffer = b;
+              const flt = this.ctx.createBiquadFilter();
+              flt.type = 'lowpass';
+              flt.frequency.setValueAtTime(650, t);
+              flt.frequency.exponentialRampToValueAtTime(50, t + 0.3);
+              const g = this.ctx.createGain();
+              g.gain.setValueAtTime(0.2, t);
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+              src.connect(flt);
+              flt.connect(g);
+              g.connect(this.master);
+              src.start(t);
+            } catch(e){}
+          }
+        }
+        const audio = new SoundEngine();
+
+        // 3. User Wallet & Authentication State
+        let currentUid = null;
+        let currentBalance = 0;
+        let isAuthReady = false;
+
+        function updateBalanceUI(bal) {
+          currentBalance = typeof bal === 'number' ? bal : Number(bal || 0);
+          const el = document.getElementById('headerBalance');
+          if (el) {
+            el.innerText = '৳' + currentBalance.toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            });
+          }
+        }
+
+        // Attach verified wallet listener
+        function attachWalletListener(uid, initialBal) {
+          if (!uid) return;
+          if (currentUid === uid && isAuthReady) return;
+          currentUid = uid;
+          isAuthReady = true;
+
+          if (typeof initialBal === 'number') {
+            updateBalanceUI(initialBal);
+          }
+
+          // Fetch authoritative server balance for uid
+          fetchUserBalance(uid);
+
+          // Direct live listener from Firebase RTDB (users/{uid}/balance)
+          if (rtdb) {
+            try {
+              rtdb.ref('users/' + uid + '/balance').on('value', (snap) => {
+                const val = snap.val();
+                if (val !== null) {
+                  const numVal = Number(val);
+                  updateBalanceUI(numVal);
+                  // Sync to server immediately so backend engine has verified balance
+                  fetch('/api/user/set-balance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid, amount: numVal })
+                  }).catch(() => {});
+                }
+              }, (err) => {
+                console.warn('Firebase RTDB balance listen error:', err);
+              });
+            } catch(e) {
+              console.warn('Firebase attach error:', e);
+            }
+          }
+        }
+
+        async function fetchUserBalance(uid) {
+          try {
+            const target = uid || currentUid;
+            if (!target) return;
+            const res = await fetch(`/api/user/balance?uid=${encodeURIComponent(target)}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (typeof data.balance === 'number') {
+                updateBalanceUI(data.balance);
+              }
+            }
+          } catch(e){}
+        }
+
+        // 1. Immediate priority check: URL Query Parameters (?userId=... or ?uid=... or ?user=...)
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlUid = urlParams.get('userId') || urlParams.get('uid') || urlParams.get('user');
+        if (urlUid) {
+          attachWalletListener(urlUid);
+        }
+
+        // 2. Immediate check: Existing Firebase current user
+        if (auth && auth.currentUser) {
+          attachWalletListener(auth.currentUser.uid);
+        }
+
+        // 3. Firebase Auth state listener
+        if (auth) {
+          auth.onAuthStateChanged((user) => {
+            if (user) {
+              attachWalletListener(user.uid);
+            } else if (!urlUid && !currentUid) {
+              auth.signInAnonymously().then((cred) => {
+                if (cred && cred.user) attachWalletListener(cred.user.uid);
+              }).catch(()=>{});
+            }
+          });
+        }
+
+        // 4. Parent Iframe Handshake (Tournament / MostWin platform integration)
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'AVITOR_READY' }, '*');
+        }
+        window.addEventListener('message', (event) => {
+          const d = event.data;
+          if (!d || !d.type) return;
+          if (d.type === 'SET_USER_SESSION' && d.uid) {
+            attachWalletListener(d.uid, d.balance);
+          } else if (d.type === 'SET_BALANCE' && typeof d.balance === 'number') {
+            updateBalanceUI(d.balance);
+            if (currentUid) {
+              fetch('/api/user/set-balance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid: currentUid, amount: d.balance })
+              }).catch(() => {});
+            }
+          }
+        });
+
+        // 4. Global State Synchronization via Server SSE / RTDB
+        let gameState = 'WAITING'; // 'WAITING' | 'FLYING' | 'CRASHED'
+        let currentRoundId = 'rnd_' + Date.now();
+        let currentMultiplier = 1.00;
+        let countdownProgress = 0;
+        let countdownSeconds = 10;
+        let flewAwayOffset = 0;
+
+        // Betting state per panel
+        const panels = {
+          1: { amount: 10, step: 10, seq: 0, busy: false, placed: false, queued: false, cashedOut: false, win: 0, mult: 1, autoBet: false, autoCash: false, cashMult: 2.0 },
+          2: { amount: 10, step: 10, seq: 0, busy: false, placed: false, queued: false, cashedOut: false, win: 0, mult: 1, autoBet: false, autoCash: false, cashMult: 2.0 }
+        };
+
+        const processedKeys = new Set();
+
+        // 5. Authoritative Bet and Cashout Transactions
+        async function executeBetTransaction(panel, amount, round) {
+          const nextSeq = (panels[panel].seq || 0) + 1;
+          const idempotencyKey = `${round}_${currentUid || 'usr'}_p${panel}_bet_${nextSeq}`;
+          if (processedKeys.has(idempotencyKey)) return false;
+          if (currentBalance < amount) return false;
+
+          processedKeys.add(idempotencyKey);
+
+          try {
+            const res = await fetch('/api/game/bet', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uid: currentUid || 'guest',
+                panel,
+                amount,
+                idempotencyKey,
+                verifiedBalance: currentBalance
+              })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+              panels[panel].seq = nextSeq;
+              panels[panel].betAmount = amount;
+              panels[panel].betRound = round;
+              if (typeof data.balance === 'number') updateBalanceUI(data.balance);
+
+              // Sync atomic deduction to Firebase RTDB if user is connected
+              if (rtdb && currentUid) {
+                rtdb.ref('users/' + currentUid + '/balance').transaction((curr) => {
+                  const prev = curr !== null ? Number(curr) : 0;
+                  if (prev < amount) return;
+                  return Number((prev - amount).toFixed(2));
+                }).catch(() => {});
+              }
+              return true;
+            } else {
+              processedKeys.delete(idempotencyKey);
+              return false;
+            }
+          } catch(e) {
+            processedKeys.delete(idempotencyKey);
+            return false;
+          }
+        }
+
+        // Cancel an active bet during countdown and refund it exactly once
+        async function executeCancelTransaction(panel, round) {
+          const st = panels[panel];
+          const refund = st.betAmount || st.amount;
+          const idempotencyKey = `${round}_${currentUid || 'usr'}_p${panel}_cancel_${st.seq}`;
+          if (processedKeys.has(idempotencyKey)) return false;
+          processedKeys.add(idempotencyKey);
+
+          try {
+            const res = await fetch('/api/game/cancel', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uid: currentUid || 'guest',
+                panel,
+                amount: refund,
+                round,
+                idempotencyKey
+              })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+              if (typeof data.balance === 'number') updateBalanceUI(data.balance);
+
+              // Sync atomic refund to Firebase RTDB if user is connected
+              if (rtdb && currentUid) {
+                rtdb.ref('users/' + currentUid + '/balance').transaction((curr) => {
+                  const prev = curr !== null ? Number(curr) : 0;
+                  return Number((prev + refund).toFixed(2));
+                }).catch(() => {});
+              }
+              return true;
+            } else {
+              processedKeys.delete(idempotencyKey);
+              return false;
+            }
+          } catch (e) {
+            processedKeys.delete(idempotencyKey);
+            return false;
+          }
+        }
+
+        async function executeCashoutTransaction(panel, round) {
+          const idempotencyKey = `${round}_${currentUid || 'usr'}_p${panel}_cashout`;
+          if (processedKeys.has(idempotencyKey)) return;
+          processedKeys.add(idempotencyKey);
+
+          try {
+            const res = await fetch('/api/game/cashout', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uid: currentUid || 'guest',
+                panel,
+                idempotencyKey
+              })
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+              // APPROVED: Cashout succeeded within Global Payout Limit!
+              audio.cashout();
+              const st = panels[panel];
+              st.cashedOut = true;
+              st.win = data.winAmount;
+              st.mult = data.multiplier;
+              if (typeof data.balance === 'number') updateBalanceUI(data.balance);
+              updatePanelUI(panel);
+
+              // Sync atomic credit to Firebase RTDB if user is connected
+              if (rtdb && currentUid) {
+                rtdb.ref('users/' + currentUid + '/balance').transaction((curr) => {
+                  const prev = curr !== null ? Number(curr) : 0;
+                  return Number((prev + data.winAmount).toFixed(2));
+                }).catch(() => {});
+              }
+            } else {
+              // REJECTED (e.g. REJECTED_PAYOUT_LIMIT or round crashed)
+              // STRICT RULE: No alert, no popup, no toast, no error message!
+              // The cash out is simply rejected, no payout added, balance unchanged.
+              // Normal crash animation continues without interruption.
+              const st = panels[panel];
+              st.cashedOut = false;
+            }
+          } catch (e) {
+            processedKeys.delete(idempotencyKey);
+          }
+        }
+
+        function triggerCashout(p) {
+          if (gameState !== 'FLYING') return;
+          const st = panels[p];
+          if (!st.placed || st.cashedOut) return;
+          executeCashoutTransaction(p, currentRoundId);
+        }
+
+        // Update Panel UI based on authoritative state
+        function updatePanelUI(p) {
+          const state = panels[p];
+          const btn = document.getElementById('btnAction' + p);
+          const tSpan = document.getElementById('actionTitle' + p);
+          const aSpan = document.getElementById('actionAmount' + p);
+          if (!btn || !tSpan || !aSpan) return;
+
+          if (gameState === 'FLYING') {
+            if (state.placed && !state.cashedOut) {
+              btn.className = 'btn-bet-action btn-cashout-orange';
+              tSpan.innerText = 'CASH OUT';
+              const liveWin = (state.amount * currentMultiplier).toFixed(2);
+              aSpan.innerText = '৳' + liveWin;
+            } else if (state.cashedOut) {
+              btn.className = 'btn-bet-action cashed-out-box';
+              tSpan.innerText = 'CASHED OUT';
+              aSpan.innerText = '৳' + state.win.toFixed(2);
+            } else {
+              btn.className = 'btn-bet-action btn-disabled';
+              tSpan.innerText = 'BET';
+              aSpan.innerText = '৳' + state.amount.toFixed(2);
+            }
+          } else if (gameState === 'CRASHED') {
+            if (state.cashedOut) {
+              btn.className = 'btn-bet-action cashed-out-box';
+              tSpan.innerText = 'CASHED OUT';
+              aSpan.innerText = '৳' + state.win.toFixed(2);
+            } else {
+              btn.className = 'btn-bet-action btn-disabled';
+              tSpan.innerText = 'BET';
+              aSpan.innerText = '৳' + state.amount.toFixed(2);
+            }
+          } else {
+            // WAITING
+            if (state.placed) {
+              btn.className = 'btn-bet-action btn-bet-red';
+              tSpan.innerText = 'CANCEL';
+              aSpan.innerText = '৳' + state.amount.toFixed(2);
+            } else {
+              btn.className = 'btn-bet-action btn-bet-green';
+              tSpan.innerText = 'BET';
+              aSpan.innerText = '৳' + state.amount.toFixed(2);
+            }
+          }
+        }
+
+        // Apply Authoritative State from Server
+        let lastServerMsg = 0;
+        const pageLoadedAt = Date.now();
+        function applyAuthoritativeState(srv) {
+          if (!srv || !srv.status) return;
+          lastServerMsg = Date.now();
+          const prevStatus = gameState;
+          const prevRoundId = currentRoundId;
+
+          gameState = srv.status;
+          currentRoundId = srv.roundId;
+
+          if (typeof srv.currentMultiplier === 'number') {
+            currentMultiplier = srv.currentMultiplier;
+          }
+          if (typeof srv.countdownProgress === 'number') {
+            countdownProgress = srv.countdownProgress;
+          }
+          if (typeof srv.countdownSeconds === 'number') {
+            countdownSeconds = srv.countdownSeconds;
+          }
+
+          // New round started
+          if (currentRoundId !== prevRoundId) {
+            flewAwayOffset = 0;
+            populateTableBets();
+
+            // Trigger auto-bets if set
+            [1, 2].forEach((p) => {
+              const st = panels[p];
+              st.cashedOut = false;
+              st.win = 0;
+              if (st.autoBet && !st.placed) {
+                executeBetTransaction(p, st.amount, currentRoundId).then((ok) => {
+                  st.placed = ok;
+                  updatePanelUI(p);
+                });
+              } else {
+                st.placed = false;
+                updatePanelUI(p);
+              }
+            });
+          }
+
+          // Flight started
+          if (prevStatus === 'WAITING' && gameState === 'FLYING') {
+            audio.startEngine();
+            [1, 2].forEach((p) => {
+              updatePanelUI(p);
+            });
+          }
+
+          // Round crashed
+          if (prevStatus === 'FLYING' && gameState === 'CRASHED') {
+            audio.crash();
+            addHistoryPill(currentMultiplier);
+
+            [1, 2].forEach((p) => {
+              if (panels[p].placed && !panels[p].cashedOut) {
+                panels[p].placed = false;
+              }
+              updatePanelUI(p);
+            });
+          }
+
+          // In flight: pitch audio & auto-cashout check
+          if (gameState === 'FLYING') {
+            audio.pitch(currentMultiplier);
+            [1, 2].forEach((p) => {
+              const st = panels[p];
+              if (st.placed && !st.cashedOut) {
+                updatePanelUI(p);
+                if (st.autoCash && currentMultiplier >= st.cashMult) {
+                  triggerCashout(p);
+                }
+              }
+            });
+            updateBotBets(currentMultiplier);
+          } else {
+            [1, 2].forEach(p => updatePanelUI(p));
+          }
+
+          // Sync history pills if provided
+          if (srv.history && Array.isArray(srv.history)) {
+            syncHistoryPills(srv.history);
+          }
+        }
+
+        // Connect to Server SSE, with a reliable polling fallback.
+        // If the live stream fails or stays silent (some hosts/proxies block SSE),
+        // the game keeps updating by polling /api/game/state every 500ms.
+        let pollTimer = null;
+        let sseRef = null;
+        function startPolling() {
+          if (pollTimer) return;
+          fetchStatePolling();
+          pollTimer = setInterval(fetchStatePolling, 500);
+        }
+        function stopPolling() {
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        }
+        function connectServerEvents() {
+          try {
+            const es = new EventSource('/api/game/events');
+            sseRef = es;
+            es.onmessage = (event) => {
+              try {
+                const msg = JSON.parse(event.data);
+                if (msg.state) {
+                  applyAuthoritativeState(msg.state);
+                  stopPolling();
+                }
+              } catch(e){}
+            };
+            es.onerror = () => {
+              try { es.close(); } catch(e){}
+              startPolling();
+              setTimeout(connectServerEvents, 3000);
+            };
+          } catch (e) {
+            startPolling();
+          }
+        }
+
+        async function fetchStatePolling() {
+          try {
+            const res = await fetch('/api/game/state', { cache: 'no-store' });
+            if (res.ok) {
+              const st = await res.json();
+              applyAuthoritativeState(st && st.state ? st.state : st);
+            }
+          } catch(e){}
+        }
+
+        // Watchdog: if nothing arrived for 2.5s, fall back to polling
+        setInterval(() => {
+          if (Date.now() - lastServerMsg > 2500) startPolling();
+        }, 1000);
+
+        connectServerEvents();
+
+        // 6. 60FPS Flight Canvas Arena (Exact Visuals Preserved)
+        const canvas = document.getElementById('flightCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+
+        function resizeCanvas() {
+          const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+          const w = canvas.clientWidth || 360;
+          const h = canvas.clientHeight || 240;
+          if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+            canvas.width = Math.floor(w * dpr);
+            canvas.height = Math.floor(h * dpr);
+          }
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function drawAirplane(c, x, y, tilt, propAngle) {
+          c.save();
+          c.translate(x, y);
+          c.rotate(tilt);
+          c.scale(1.15, 1.15);
+
+          // Shadow
+          c.fillStyle = 'rgba(0,0,0,0.45)';
+          c.beginPath();
+          c.ellipse(-4, 18, 22, 6, -0.1, 0, Math.PI * 2);
+          c.fill();
+
+          // Tail
+          c.fillStyle = '#ff0038';
+          c.strokeStyle = '#c4002b';
+          c.lineWidth = 1.5;
+          c.beginPath();
+          c.moveTo(-24, -5);
+          c.lineTo(-38, -22);
+          c.lineTo(-43, -20);
+          c.lineTo(-33, 0);
+          c.closePath();
+          c.fill();
+          c.stroke();
+
+          // White stripe
+          c.fillStyle = '#ffffff';
+          c.beginPath();
+          c.moveTo(-31, -12);
+          c.lineTo(-35, -17);
+          c.lineTo(-38, -16);
+          c.lineTo(-34, -11);
+          c.closePath();
+          c.fill();
+
+          // Fuselage
+          const bg = c.createLinearGradient(-35, -12, 30, 8);
+          bg.addColorStop(0, '#d6002f');
+          bg.addColorStop(0.4, '#ff0038');
+          bg.addColorStop(1, '#ff0038');
+          c.fillStyle = bg;
+          c.strokeStyle = '#b80028';
+          c.lineWidth = 2;
+          c.beginPath();
+          c.moveTo(28, -2);
+          c.quadraticCurveTo(18, -13, -30, -7);
+          c.lineTo(-34, 2);
+          c.quadraticCurveTo(-15, 7, 28, 2);
+          c.closePath();
+          c.fill();
+          c.stroke();
+
+          // Canopy
+          const glass = c.createLinearGradient(0, -14, 0, -6);
+          glass.addColorStop(0, '#ffffff');
+          glass.addColorStop(0.5, '#70c5ff');
+          c.fillStyle = glass;
+          c.beginPath();
+          c.moveTo(7, -8);
+          c.quadraticCurveTo(-3, -15, -14, -8);
+          c.lineTo(-12, -6);
+          c.lineTo(5, -6);
+          c.closePath();
+          c.fill();
+
+          // Wing
+          c.fillStyle = '#ff0038';
+          c.strokeStyle = '#8f0020';
+          c.lineWidth = 1.5;
+          c.beginPath();
+          c.moveTo(4, 0);
+          c.lineTo(-24, 15);
+          c.lineTo(-31, 12);
+          c.lineTo(-8, -2);
+          c.closePath();
+          c.fill();
+          c.stroke();
+
+          // Propeller
+          c.save();
+          c.translate(32, -0.5);
+          // nose cap connecting fuselage to propeller hub
+          c.fillStyle = '#b80028';
+          c.beginPath();
+          c.ellipse(-3, 0, 5, 3.6, 0, 0, Math.PI * 2);
+          c.fill();
+          // blurred prop disc (seen edge-on from the side)
+          c.fillStyle = 'rgba(255,255,255,0.22)';
+          c.beginPath();
+          c.ellipse(0, 0, 3, 16, 0, 0, Math.PI * 2);
+          c.fill();
+          // two blades spinning around the nose axis (slower angle so the spin is clearly visible)
+          const spin = propAngle * 0.4;
+          c.lineCap = 'round';
+          // ghost trail of earlier blade positions = motion blur that shows the rotation direction
+          for (let g = 4; g >= 1; g--) {
+            const ga = spin - g * 0.28;
+            c.strokeStyle = `rgba(255,255,255,${0.07 * (5 - g)})`;
+            c.lineWidth = 3;
+            const gl = Math.cos(ga) * 15;
+            c.beginPath(); c.moveTo(0, -gl); c.lineTo(0, gl); c.stroke();
+          }
+          [0, Math.PI / 2].forEach((off, i) => {
+            const ang = spin + off;
+            const len = Math.cos(ang) * 15;
+            // blade facing the viewer is bright, the one turning away is darker
+            const facing = Math.sin(ang) > 0;
+            c.strokeStyle = i === 0 ? (facing ? '#ff3b63' : '#c4002b') : (facing ? '#ff6b88' : '#8f0020');
+            c.lineWidth = 3.4;
+            c.beginPath(); c.moveTo(0, -len); c.lineTo(0, len); c.stroke();
+            // blade tips: small white dots so the moving ends are easy to follow
+            c.fillStyle = '#ffffff';
+            c.beginPath(); c.arc(0, -len, 1.5, 0, Math.PI * 2); c.fill();
+            c.beginPath(); c.arc(0, len, 1.5, 0, Math.PI * 2); c.fill();
+          });
+          // hub
+          c.fillStyle = '#ffd7de';
+          c.beginPath();
+          c.arc(0, 0, 2.6, 0, Math.PI * 2);
+          c.fill();
+          c.restore();
+
+          c.restore();
+        }
+
+        let angleTick = 0;
+
+        // Camera / parallax state (smoothed so nothing jumps)
+        let camZoom = 1;
+        let bgSpeed = 0.25;
+        let bgX = 0, bgY = 0;
+        let planeTilt = -0.32;
+        const mod = (a, m) => ((a % m) + m) % m;
+        const bgStreaks = Array.from({ length: 16 }, () => ({
+          x: Math.random(), y: Math.random(),
+          len: 0.6 + Math.random() * 0.9,
+          layer: 1.0 + Math.random() * 0.8
+        }));
+
+        function renderLoop() {
+          resizeCanvas();
+          const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+          const w = canvas.width / dpr;
+          const h = canvas.height / dpr;
+          angleTick += 0.85;
+
+          ctx.save();
+          ctx.scale(dpr, dpr);
+          ctx.clearRect(0, 0, w, h);
+
+          // Deep Space Radial Background
+          const bgGrad = ctx.createRadialGradient(w * 0.1, h * 0.9, 10, w * 0.5, h * 0.5, h * 0.9);
+          bgGrad.addColorStop(0, '#210915');
+          bgGrad.addColorStop(0.5, '#120815');
+          bgGrad.addColorStop(1, '#09080c');
+          ctx.fillStyle = bgGrad;
+          ctx.fillRect(0, 0, w, h);
+
+          // Camera values: zoom grows slowly with height, background scrolls opposite to the plane
+          const isFly = gameState === 'FLYING' || gameState === 'CRASHED';
+          const lv = isFly ? Math.min(0.86, Math.log(Math.max(1, currentMultiplier)) / 3.2) : 0;
+          camZoom += ((1 + lv * 0.32) - camZoom) * (gameState === 'WAITING' ? 0.1 : 0.05);
+          const spdTarget = gameState === 'FLYING' ? 0.6 + lv * 5 : (gameState === 'CRASHED' ? 0 : 0.25);
+          bgSpeed += (spdTarget - bgSpeed) * 0.04;
+          bgX += bgSpeed;
+          bgY += bgSpeed * 0.35;
+          const camBegin = () => { ctx.save(); ctx.translate(0, h); ctx.scale(camZoom, camZoom); ctx.translate(0, -h); };
+          const camEnd = () => ctx.restore();
+
+          // Background layers (rays, speed streaks) zoom together with the plane
+          camBegin();
+
+          // Perspective Rays
+          ctx.save();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.022)';
+          for (let i = 0; i < 24; i++) {
+            const t1 = (i / 24) * (Math.PI / 2);
+            const t2 = ((i + 0.45) / 24) * (Math.PI / 2);
+            ctx.beginPath();
+            ctx.moveTo(-20, h + 20);
+            ctx.lineTo(-20 + w * 1.8 * Math.cos(t1), (h + 20) - h * 1.8 * Math.sin(t1));
+            ctx.lineTo(-20 + w * 1.8 * Math.cos(t2), (h + 20) - h * 1.8 * Math.sin(t2));
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.restore();
+
+          // Speed streaks (move left & down = opposite to plane's forward/up path)
+          const spanX = w + 160, spanY = h + 120;
+          ctx.save();
+          // Speed streaks fade in as speed rises
+          const streakA = Math.max(0, Math.min(0.22, (bgSpeed - 0.3) * 0.1));
+          if (streakA > 0.004) {
+            ctx.strokeStyle = `rgba(255,255,255,${streakA})`;
+            ctx.lineWidth = 1.2;
+            bgStreaks.forEach((st) => {
+              const sx = mod(st.x * spanX - bgX * st.layer * 2.2, spanX) - 80;
+              const sy = mod(st.y * spanY + bgY * st.layer * 2.2, spanY) - 60;
+              const L = (20 + bgSpeed * 9) * st.len;
+              ctx.beginPath();
+              ctx.moveTo(sx, sy);
+              ctx.lineTo(sx + L, sy - L * 0.35);
+              ctx.stroke();
+            });
+          }
+          ctx.restore();
+          camEnd();
+
+          const runwayY = h - 44;
+          if (gameState === 'WAITING') planeTilt += (-0.32 - planeTilt) * 0.1;
+
+          if (gameState === 'WAITING') {
+            camBegin();
+            drawAirplane(ctx, 52, runwayY, planeTilt, angleTick * 0.7);
+            camEnd();
+
+            // Watermark (Aviator Official Game + Powered by MostWin88)
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 15px system-ui, sans-serif';
+            ctx.fillText('AVIATOR', w / 2, 35);
+            ctx.fillStyle = '#28a745';
+            ctx.font = 'bold 10px system-ui, sans-serif';
+            ctx.fillText('Official Game ✓', w / 2, 50);
+            ctx.fillStyle = '#f59e0b';
+            ctx.font = 'bold 9.5px system-ui, sans-serif';
+            ctx.fillText('Powered by MostWin88', w / 2, 64);
+            ctx.restore();
+
+            // Progress Bar
+            const barW = Math.min(260, w * 0.75);
+            const barX = (w - barW) / 2;
+            const barY = h * 0.58;
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 13px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('WAITING FOR NEXT ROUND', w / 2, barY - 14);
+
+            ctx.fillStyle = '#22252e';
+            ctx.beginPath();
+            ctx.roundRect(barX, barY, barW, 5, 3);
+            ctx.fill();
+
+            ctx.fillStyle = '#ff0038';
+            ctx.shadowColor = 'rgba(255,0,56,0.7)';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.roundRect(barX, barY, Math.max(0, Math.min(barW, barW * countdownProgress)), 5, 3);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = 'rgba(255,255,255,0.65)';
+            ctx.font = '11px system-ui, sans-serif';
+            ctx.fillText(`Starting in ${countdownSeconds.toFixed(1)}s`, w / 2, barY + 22);
+
+          } else if (gameState === 'FLYING' || gameState === 'CRASHED') {
+            const logVal = lv;
+            // Desired on-screen position (kept inside the frame), converted to world
+            // coordinates so that after the camera zoom the plane lands exactly there.
+            const hover = gameState === 'FLYING' ? Math.sin(angleTick * 0.06) * 3 : 0;
+            const wantX = Math.min(w - 55, 52 + logVal * (w - 52 - 55)) + hover * 0.6;
+            const wantY = runwayY - Math.pow(logVal, 0.82) * (runwayY - 45) + hover;
+            const planeX = wantX / camZoom;
+            const planeY = h + (wantY - h) / camZoom;
+            const ctrlX = planeX * 0.52;
+
+            // Nose follows the direction of the flight path (tangent of the trail at the plane)
+            const tanAng = Math.atan2(planeY - h, planeX - ctrlX);
+            const tiltTarget = Math.max(-0.7, Math.min(-0.12, tanAng));
+            planeTilt += (tiltTarget - planeTilt) * 0.08;
+
+            camBegin();
+            // Gradient curve trail
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(0, h);
+            ctx.quadraticCurveTo(ctrlX, h, planeX, planeY);
+            ctx.lineTo(planeX, h);
+            ctx.lineTo(0, h);
+            ctx.closePath();
+
+            const trailGrad = ctx.createLinearGradient(0, planeY, 0, h);
+            trailGrad.addColorStop(0, 'rgba(255, 0, 56, 0.78)');
+            trailGrad.addColorStop(0.5, 'rgba(200, 0, 40, 0.45)');
+            trailGrad.addColorStop(1, 'rgba(100, 0, 20, 0.15)');
+            ctx.fillStyle = trailGrad;
+            ctx.fill();
+
+            // Glowing line
+            ctx.beginPath();
+            ctx.moveTo(0, h);
+            ctx.quadraticCurveTo(ctrlX, h, planeX, planeY);
+            ctx.strokeStyle = '#ff0038';
+            ctx.lineWidth = 4.5;
+            ctx.shadowColor = 'rgba(255,0,56,0.8)';
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+
+            if (gameState === 'FLYING') {
+              drawAirplane(ctx, planeX, planeY, planeTilt, angleTick);
+            } else {
+              flewAwayOffset += 0.04;
+              const fx = planeX + Math.cos(planeTilt) * flewAwayOffset * 240;
+              const fy = planeY + Math.sin(planeTilt) * flewAwayOffset * 240;
+              if (fx * camZoom < w + 100 && h + (fy - h) * camZoom > -100) {
+                drawAirplane(ctx, fx, fy, planeTilt, angleTick * 1.5);
+              }
+            }
+            camEnd();
+
+            // Big Multiplier Center Text
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            if (gameState === 'CRASHED') {
+              ctx.fillStyle = '#ffffff';
+              ctx.font = '900 18px system-ui, sans-serif';
+              ctx.fillText('FLEW AWAY!', w / 2, h * 0.36);
+
+              ctx.fillStyle = '#ff0038';
+              ctx.shadowColor = 'rgba(255,0,56,0.8)';
+              ctx.shadowBlur = 20;
+              ctx.font = '900 48px system-ui, sans-serif';
+              ctx.fillText(`${currentMultiplier.toFixed(2)}x`, w / 2, h * 0.58);
+            } else {
+              ctx.fillStyle = '#ffffff';
+              ctx.shadowColor = 'rgba(0,0,0,0.8)';
+              ctx.shadowBlur = 14;
+              ctx.font = '900 52px system-ui, sans-serif';
+              ctx.fillText(`${currentMultiplier.toFixed(2)}x`, w / 2, h * 0.50);
+            }
+            ctx.restore();
+          }
+
+          // Connection status (shown only when the server is not sending game data)
+          if (Date.now() - Math.max(lastServerMsg, pageLoadedAt) > 4000) {
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(245,158,11,0.95)';
+            ctx.font = 'bold 12px system-ui, sans-serif';
+            ctx.fillText('Connecting to game server…', w / 2, h - 14);
+            ctx.restore();
+          }
+
+          ctx.restore();
+          requestAnimationFrame(renderLoop);
+        }
+        requestAnimationFrame(renderLoop);
+
+        // 7. Live Table Bot Generation
+        const bots = ['d***5', 'r***8', 's***2', 'k***9', 'm***7', 'a***4', 't***1', 'b***3', 'z***0', 'h***6', 'p***9', 'n***2'];
+        let activeBotBets = [];
+
+        function populateTableBets() {
+          const rows = document.getElementById('tableRows');
+          if (!rows) return;
+          rows.innerHTML = '';
+          activeBotBets = bots.map((name, i) => {
+            const betAmt = [10, 20, 50, 100, 200, 500][Math.floor(Math.random() * 6)];
+            const targetM = Number((1.1 + Math.random() * 4.5).toFixed(2));
+            return { name, betAmt, targetM, cashed: false };
+          });
+
+          activeBotBets.forEach((b, idx) => {
+            const div = document.createElement('div');
+            div.className = 'bet-row';
+            div.id = 'botRow_' + idx;
+            div.innerHTML = `
+              <span>${b.name}</span>
+              <span style="text-align:right; font-weight:700;">৳${b.betAmt}</span>
+              <span style="text-align:center; color:#6b7280;" id="botX_${idx}">-</span>
+              <span style="text-align:right; color:#6b7280;" id="botWin_${idx}">-</span>
+            `;
+            rows.appendChild(div);
+          });
+        }
+
+        function updateBotBets(m) {
+          activeBotBets.forEach((b, idx) => {
+            if (!b.cashed && m >= b.targetM) {
+              b.cashed = true;
+              const r = document.getElementById('botRow_' + idx);
+              const xSpan = document.getElementById('botX_' + idx);
+              const wSpan = document.getElementById('botWin_' + idx);
+              if (r && xSpan && wSpan) {
+                r.className = 'bet-row won-row';
+                xSpan.innerText = b.targetM.toFixed(2) + 'x';
+                xSpan.style.color = '#38bdf8';
+                const win = (b.betAmt * b.targetM).toFixed(2);
+                wSpan.innerText = '৳' + win;
+                wSpan.style.color = '#28a745';
+              }
+            }
+          });
+        }
+
+        // Keep public online table displaying sample players without exposing user details
+        function addUserBetRow() {}
+        function highlightUserBetWon() {}
+
+        function addHistoryPill(val) {
+          const bar = document.getElementById('historyBar');
+          if (!bar) return;
+          const pill = document.createElement('span');
+          let cls = 'pill-low';
+          if (val >= 10.0) cls = 'pill-high';
+          else if (val >= 2.0) cls = 'pill-mid';
+          pill.className = 'pill ' + cls;
+          pill.innerText = val.toFixed(2) + 'x';
+          bar.insertBefore(pill, bar.firstChild);
+          if (bar.children.length > 20) bar.removeChild(bar.lastChild);
+        }
+
+        function syncHistoryPills(list) {
+          const bar = document.getElementById('historyBar');
+          if (!bar || !list.length) return;
+          bar.innerHTML = '';
+          list.forEach((val) => {
+            const pill = document.createElement('span');
+            let cls = 'pill-low';
+            if (val >= 10.0) cls = 'pill-high';
+            else if (val >= 2.0) cls = 'pill-mid';
+            pill.className = 'pill ' + cls;
+            pill.innerText = val.toFixed(2) + 'x';
+            bar.appendChild(pill);
+          });
+        }
+
+        // 8. Bind Button Handlers
+        [1, 2].forEach((p) => {
+          function setAmt(val) {
+            panels[p].amount = Math.max(10, Math.min(10000, Number(val.toFixed(2))));
+            const disp = document.getElementById('dispAmount' + p);
+            const act = document.getElementById('actionAmount' + p);
+            if (disp) disp.innerText = '৳' + panels[p].amount.toFixed(2);
+            if (act) act.innerText = '৳' + panels[p].amount.toFixed(2);
+          }
+          const bMin = document.getElementById('btnMinus' + p);
+          const bPlus = document.getElementById('btnPlus' + p);
+          if (bMin) bMin.onclick = () => {
+            if (gameState === 'FLYING' || panels[p].placed) return;
+            setAmt(panels[p].amount - panels[p].step);
+          };
+          if (bPlus) bPlus.onclick = () => {
+            if (gameState === 'FLYING' || panels[p].placed) return;
+            setAmt(panels[p].amount + panels[p].step);
+          };
+
+          // Presets
+          document.querySelectorAll(`.preset-btn[data-p="${p}"]`).forEach((btn) => {
+            btn.onclick = () => {
+              if (gameState === 'FLYING' || panels[p].placed) return;
+              document.querySelectorAll(`.preset-btn[data-p="${p}"]`).forEach(b => b.classList.remove('active'));
+              btn.classList.add('active');
+              panels[p].step = Number(btn.getAttribute('data-val'));
+              setAmt(panels[p].step);
+            };
+          });
+
+          // Action button (BET / CASH OUT / CANCEL)
+          const btnAct = document.getElementById('btnAction' + p);
+          if (btnAct) btnAct.onclick = () => {
+            if (gameState === 'FLYING') {
+              triggerCashout(p);
+            } else if (gameState === 'WAITING') {
+              // Ignore double clicks / repeated requests while one is in flight
+              if (panels[p].busy) return;
+              panels[p].busy = true;
+              const round = currentRoundId;
+              if (panels[p].placed) {
+                // Cancel: refund once via server
+                executeCancelTransaction(p, round).then((ok) => {
+                  if (ok) panels[p].placed = false;
+                }).finally(() => {
+                  panels[p].busy = false;
+                  updatePanelUI(p);
+                });
+              } else {
+                // Place Bet with Authoritative Server
+                executeBetTransaction(p, panels[p].amount, round).then((ok) => {
+                  if (ok) panels[p].placed = true;
+                }).finally(() => {
+                  panels[p].busy = false;
+                  updatePanelUI(p);
+                });
+              }
+            } else {
+              panels[p].queued = !panels[p].queued;
+              updatePanelUI(p);
+            }
+          };
+
+          // Tabs Bet/Auto
+          const tabBet = document.getElementById('tabBet' + p);
+          const tabAuto = document.getElementById('tabAuto' + p);
+          const autoBar = document.getElementById('autoBar' + p);
+          if (tabBet && tabAuto && autoBar) {
+            tabBet.onclick = () => {
+              tabBet.classList.add('active');
+              tabAuto.classList.remove('active');
+              autoBar.style.display = 'none';
+            };
+            tabAuto.onclick = () => {
+              tabAuto.classList.add('active');
+              tabBet.classList.remove('active');
+              autoBar.style.display = 'flex';
+            };
+          }
+
+          // Checkboxes
+          const chkAutoBet = document.getElementById('chkAutoBet' + p);
+          const chkAutoCash = document.getElementById('chkAutoCash' + p);
+          const autoCashBox = document.getElementById('autoCashBox' + p);
+
+          if (chkAutoBet) chkAutoBet.onchange = (e) => { panels[p].autoBet = e.target.checked; };
+          if (chkAutoCash && autoCashBox) chkAutoCash.onchange = (e) => {
+            panels[p].autoCash = e.target.checked;
+            autoCashBox.style.display = e.target.checked ? 'flex' : 'none';
+          };
+
+          const mMinus = document.getElementById('btnCashMinus' + p);
+          const mPlus = document.getElementById('btnCashPlus' + p);
+          if (mMinus) mMinus.onclick = () => {
+            panels[p].cashMult = Math.max(1.05, Number((panels[p].cashMult - 0.1).toFixed(2)));
+            const d = document.getElementById('dispCashoutM' + p);
+            if (d) d.innerText = panels[p].cashMult.toFixed(2) + 'x';
+          };
+          if (mPlus) mPlus.onclick = () => {
+            panels[p].cashMult = Number((panels[p].cashMult + 0.1).toFixed(2));
+            const d = document.getElementById('dispCashoutM' + p);
+            if (d) d.innerText = panels[p].cashMult.toFixed(2) + 'x';
+          };
+        });
+
+        // Sound Toggle
+        const btnS = document.getElementById('btnSound');
+        if (btnS) btnS.onclick = () => {
+          const isM = audio.toggleMute();
+          const sOn = document.getElementById('iconSoundOn');
+          const sOff = document.getElementById('iconSoundOff');
+          if (sOn) sOn.style.display = isM ? 'none' : 'block';
+          if (sOff) sOff.style.display = isM ? 'block' : 'none';
+          if (!isM && gameState === 'FLYING') audio.startEngine();
+        };
+
+        // Unlock audio on initial gesture
+        window.addEventListener('click', () => audio.init(), { once: true });
+        window.addEventListener('touchstart', () => audio.init(), { once: true });
+
+        // Initial table load
+        populateTableBets();
+      })();
+    </script>
+  </body>
+</html>
