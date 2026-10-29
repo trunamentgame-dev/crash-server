@@ -133,7 +133,7 @@ function startFlying() {
 function crash() {
   game.status = 'CRASHED'; game.crashedAt = Date.now(); game.currentMultiplier = game.crashPoint;
   game.history.unshift(game.crashPoint); if (game.history.length > 20) game.history.pop();
-  game.bets.forEach((b) => { if (b.state === 'active') logTx({ type: 'bet_lost', uid: b.uid, amount: b.amount, round: game.roundId, panel: b.panel }); });
+  game.bets.forEach((b) => { if (b.state === 'active') logTx({ type: 'bet_lost', game: 'Aviator', uid: b.uid, amount: b.amount, round: game.roundId, panel: b.panel }); });
   const info = { round: game.roundId, mode: game.mode, bettors: game.bettors, crashPoint: game.crashPoint, pool: game.pool, paid: game.paid, reason: game.crashReason };
   console.log('CRASH', JSON.stringify(info));
   logRound(info);
@@ -214,7 +214,7 @@ async function handleBet(req, body) {
   if (!b || game.roundId !== roundId) { await changeBalance(uid, amount); return { success: false, error: 'ROUND_CHANGED' }; }
   b.state = 'active';
   game.pool = round2(game.pool + amount);
-  logTx({ type: 'bet', uid, amount, round: roundId, panel });
+  logTx({ type: 'bet', game: 'Aviator', uid, amount, balance: bal, round: roundId, panel });
   const res = { success: true, balance: bal };
   game.keys.set(key, res);
   return res;
@@ -234,7 +234,7 @@ async function handleCancel(req, body) {
   if (bal === null) { b.state = 'active'; return { success: false, error: 'REFUND_FAILED' }; }
   game.bets.delete(bk);
   game.pool = round2(Math.max(0, game.pool - amount));
-  logTx({ type: 'bet_cancel', uid, amount, round: roundId, panel });
+  logTx({ type: 'bet_cancel', game: 'Aviator', uid, amount, balance: bal, round: roundId, panel });
   const res = { success: true, balance: bal };
   game.keys.set(key, res);
   return res;
@@ -253,7 +253,7 @@ async function handleCashout(req, body) {
   const win = round2(Math.min(b.amount * m, MAX_PAYOUT));
   const bal = await changeBalance(uid, win);
   if (bal === null) { b.state = 'active'; return { success: false, error: 'PAYOUT_FAILED' }; }
-  logTx({ type: 'cashout', uid, amount: b.amount, win, multiplier: m, round: game.roundId, panel });
+  logTx({ type: 'cashout', game: 'Aviator', uid, amount: b.amount, win, multiplier: m, balance: bal, round: game.roundId, panel });
   const res = { success: true, winAmount: win, multiplier: m, balance: bal };
   game.keys.set(key, res);
   game.paid = round2(game.paid + win);
