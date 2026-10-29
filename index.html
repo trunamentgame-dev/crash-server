@@ -861,11 +861,32 @@
           }
         }
 
+        // Login token handed over by the User Panel (URL hash: #t=...), sent to the server with every request
+        let gameIdToken = null;
+        function authHeaders(h) {
+          const o = Object.assign({}, h || {});
+          if (gameIdToken) o['Authorization'] = 'Bearer ' + gameIdToken;
+          return o;
+        }
+        (function readLoginToken() {
+          try {
+            const m = /[#&]t=([A-Za-z0-9._-]+)/.exec(window.location.hash || '');
+            if (!m) return;
+            gameIdToken = m[1];
+            history.replaceState(null, '', window.location.pathname + window.location.search);   // hide the token from the address bar
+            const payload = JSON.parse(atob(gameIdToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+            const tokUid = payload.user_id || payload.sub;
+            if (tokUid) attachWalletListener(tokUid);
+          } catch (e) { console.warn('Login token read failed', e); }
+        })();
+        // Keep the balance fresh (deposits / withdrawals made while the game is open)
+        setInterval(() => { if (currentUid) fetchUserBalance(currentUid); }, 15000);
+
         async function fetchUserBalance(uid) {
           try {
             const target = uid || currentUid;
             if (!target) return;
-            const res = await fetch(`${API_BASE}/api/user/balance?uid=${encodeURIComponent(target)}`);
+            const res = await fetch(`${API_BASE}/api/user/balance?uid=${encodeURIComponent(target)}`, { headers: authHeaders() });
             if (res.ok) {
               const data = await res.json();
               if (typeof data.balance === 'number') {
@@ -939,7 +960,7 @@
           try {
             const res = await fetch(API_BASE + '/api/game/bet', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: authHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
                 uid: currentUid || 'guest',
                 panel,
@@ -981,7 +1002,7 @@
           try {
             const res = await fetch(API_BASE + '/api/game/cancel', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: authHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
                 uid: currentUid || 'guest',
                 panel,
@@ -1013,7 +1034,7 @@
           try {
             const res = await fetch(API_BASE + '/api/game/cashout', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: authHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
                 uid: currentUid || 'guest',
                 panel,
