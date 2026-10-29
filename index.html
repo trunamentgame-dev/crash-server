@@ -595,6 +595,9 @@
           measurementId: "G-LMHCM7J1K5"
         };
 
+        // Render server address (change this one line only, no trailing slash)
+        const API_BASE = 'https://crash-server-focb.onrender.com';
+
         let auth = null;
         let rtdb = null;
 
@@ -778,12 +781,6 @@
                 if (val !== null) {
                   const numVal = Number(val);
                   updateBalanceUI(numVal);
-                  // Sync to server immediately so backend engine has verified balance
-                  fetch('/api/user/set-balance', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uid, amount: numVal })
-                  }).catch(() => {});
                 }
               }, (err) => {
                 console.warn('Firebase RTDB balance listen error:', err);
@@ -798,7 +795,7 @@
           try {
             const target = uid || currentUid;
             if (!target) return;
-            const res = await fetch(`/api/user/balance?uid=${encodeURIComponent(target)}`);
+            const res = await fetch(`${API_BASE}/api/user/balance?uid=${encodeURIComponent(target)}`);
             if (res.ok) {
               const data = await res.json();
               if (typeof data.balance === 'number') {
@@ -844,13 +841,6 @@
             attachWalletListener(d.uid, d.balance);
           } else if (d.type === 'SET_BALANCE' && typeof d.balance === 'number') {
             updateBalanceUI(d.balance);
-            if (currentUid) {
-              fetch('/api/user/set-balance', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ uid: currentUid, amount: d.balance })
-              }).catch(() => {});
-            }
           }
         });
 
@@ -880,7 +870,7 @@
           processedKeys.add(idempotencyKey);
 
           try {
-            const res = await fetch('/api/game/bet', {
+            const res = await fetch(API_BASE + '/api/game/bet', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -898,15 +888,6 @@
               panels[panel].betAmount = amount;
               panels[panel].betRound = round;
               if (typeof data.balance === 'number') updateBalanceUI(data.balance);
-
-              // Sync atomic deduction to Firebase RTDB if user is connected
-              if (rtdb && currentUid) {
-                rtdb.ref('users/' + currentUid + '/balance').transaction((curr) => {
-                  const prev = curr !== null ? Number(curr) : 0;
-                  if (prev < amount) return;
-                  return Number((prev - amount).toFixed(2));
-                }).catch(() => {});
-              }
               return true;
             } else {
               processedKeys.delete(idempotencyKey);
@@ -927,7 +908,7 @@
           processedKeys.add(idempotencyKey);
 
           try {
-            const res = await fetch('/api/game/cancel', {
+            const res = await fetch(API_BASE + '/api/game/cancel', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -942,14 +923,6 @@
             const data = await res.json();
             if (data.success) {
               if (typeof data.balance === 'number') updateBalanceUI(data.balance);
-
-              // Sync atomic refund to Firebase RTDB if user is connected
-              if (rtdb && currentUid) {
-                rtdb.ref('users/' + currentUid + '/balance').transaction((curr) => {
-                  const prev = curr !== null ? Number(curr) : 0;
-                  return Number((prev + refund).toFixed(2));
-                }).catch(() => {});
-              }
               return true;
             } else {
               processedKeys.delete(idempotencyKey);
@@ -967,7 +940,7 @@
           processedKeys.add(idempotencyKey);
 
           try {
-            const res = await fetch('/api/game/cashout', {
+            const res = await fetch(API_BASE + '/api/game/cashout', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -988,14 +961,6 @@
               st.mult = data.multiplier;
               if (typeof data.balance === 'number') updateBalanceUI(data.balance);
               updatePanelUI(panel);
-
-              // Sync atomic credit to Firebase RTDB if user is connected
-              if (rtdb && currentUid) {
-                rtdb.ref('users/' + currentUid + '/balance').transaction((curr) => {
-                  const prev = curr !== null ? Number(curr) : 0;
-                  return Number((prev + data.winAmount).toFixed(2));
-                }).catch(() => {});
-              }
             } else {
               // REJECTED (e.g. REJECTED_PAYOUT_LIMIT or round crashed)
               // STRICT RULE: No alert, no popup, no toast, no error message!
@@ -1166,7 +1131,7 @@
         }
         function connectServerEvents() {
           try {
-            const es = new EventSource('/api/game/events');
+            const es = new EventSource(API_BASE + '/api/game/events');
             sseRef = es;
             es.onmessage = (event) => {
               try {
@@ -1189,7 +1154,7 @@
 
         async function fetchStatePolling() {
           try {
-            const res = await fetch('/api/game/state', { cache: 'no-store' });
+            const res = await fetch(API_BASE + '/api/game/state', { cache: 'no-store' });
             if (res.ok) {
               const st = await res.json();
               applyAuthoritativeState(st && st.state ? st.state : st);
