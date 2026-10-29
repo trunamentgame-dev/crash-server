@@ -1787,55 +1787,103 @@
           });
         }
 
-        // Live players counter: climbs randomly (1 -> 100~250) during countdown
+        // Auto Live User counter: naturally fluctuates during countdown (e.g. 10, 20, 50, 100, 150, 200, 250+), freezes when countdown ends
         (function () {
           const countEl = document.getElementById('playerCount');
           const av1 = document.getElementById('pcAv1');
           const av2 = document.getElementById('pcAv2');
           if (!countEl) return;
+
           const avColors = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#475569'];
           const rnd = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
-          let seenRound = null;
-          let startCount = rnd(8, 15);
-          let target = rnd(250, 320);
-          let count = target;
-          function newRound() {
-            startCount = rnd(8, 15);
-            target = rnd(250, 320);
-            count = startCount;
-            if (av1 && av2) {
-              const i = rnd(0, avColors.length - 1);
-              let j = rnd(0, avColors.length - 1);
-              if (j === i) j = (j + 1) % avColors.length;
-              av1.style.background = avColors[i];
-              av2.style.background = avColors[j];
-              av1.innerHTML = cartoonAvatar();
-              av2.innerHTML = cartoonAvatar();
-            }
+
+          function formatCount(val) {
+            return val >= 250 ? '250+' : String(val);
           }
-          if (av1 && av2) { av1.innerHTML = cartoonAvatar(); av2.innerHTML = cartoonAvatar(); }
-          countEl.textContent = count;
+
+          function refreshAvatars() {
+            if (!av1 || !av2) return;
+            const i = rnd(0, avColors.length - 1);
+            let j = rnd(0, avColors.length - 1);
+            if (j === i) j = (j + 1) % avColors.length;
+            av1.style.background = avColors[i];
+            av2.style.background = avColors[j];
+            av1.innerHTML = cartoonAvatar();
+            av2.innerHTML = cartoonAvatar();
+          }
+
+          let seenRound = null;
+          let lastGameState = null;
+          let target = rnd(210, 265);
+          let count = rnd(8, 15);
+
+          function startNewCountdown() {
+            target = rnd(210, 265);
+            count = rnd(8, 15);
+            refreshAvatars();
+            countEl.textContent = formatCount(count);
+          }
+
+          if (av1 && av2) {
+            av1.innerHTML = cartoonAvatar();
+            av2.innerHTML = cartoonAvatar();
+          }
+          countEl.textContent = formatCount(count);
+
           setInterval(() => {
-            if (currentRoundId !== seenRound) {
-              const first = seenRound === null;
+            const isNewRound = currentRoundId !== seenRound;
+            const enteredCountdown = gameState === 'WAITING' && lastGameState !== 'WAITING';
+
+            if (isNewRound || enteredCountdown) {
+              const isFirst = seenRound === null;
               seenRound = currentRoundId;
-              if (gameState === 'WAITING' || !first) newRound();
-              else { target = rnd(250, 320); count = target; }
+              lastGameState = gameState;
+
+              if (gameState === 'WAITING' || !isFirst) {
+                startNewCountdown();
+              } else {
+                // If loaded during active round, stay steady at realistic count
+                count = rnd(160, 255);
+                countEl.textContent = formatCount(count);
+              }
+              return;
             }
+
+            lastGameState = gameState;
+
+            // ১. কাউন্টডাউন চলাকালীন সংখ্যা স্বাভাবিক বিরতিতে বাস্তবসম্মতভাবে বৃদ্ধি ও ওঠানামা করবে
             if (gameState === 'WAITING') {
-              // Countdown: climb 10 -> 20 -> 50 -> 100 ... -> 250+ (never goes down)
-              const p = Math.max(0, Math.min(1, countdownProgress));
-              const ease = Math.pow(p, 1.15);
-              let want = startCount + (target - startCount) * ease;
-              want += (Math.random() - 0.4) * (target * 0.03);
-              want = Math.max(count, Math.min(target, Math.round(want)));
-              if (p >= 0.97) want = target;
-              count = want;
-            } else {
-              // Countdown over (FLYING / CRASHED): count is locked, no more changes
-              if (count !== target && gameState === 'FLYING' && count < target) count = target;
+              if (typeof countdownProgress === 'number' && countdownProgress > 0) {
+                const expected = Math.round(10 + (target - 10) * Math.min(1, countdownProgress));
+                const delta = expected - count;
+                let step = 0;
+                if (delta > 0) {
+                  const r = Math.random();
+                  if (r < 0.10 && count > 15) step = -rnd(1, 2); // occasional cancel
+                  else if (r < 0.20) step = 0; // brief pause
+                  else if (r < 0.65) step = rnd(3, 7); // steady bets
+                  else step = rnd(8, 16); // burst of bets
+                } else {
+                  step = Math.random() < 0.25 ? rnd(-2, 2) : 0;
+                }
+                count = Math.max(8, count + step);
+              } else {
+                if (count < target) {
+                  const r = Math.random();
+                  let step = 0;
+                  if (r < 0.10 && count > 15) step = -rnd(1, 2);
+                  else if (r < 0.20) step = 0;
+                  else if (r < 0.65) step = rnd(3, 8);
+                  else step = rnd(9, 16);
+                  count = Math.max(8, Math.min(target, count + step));
+                } else if (Math.random() < 0.25) {
+                  count = Math.max(8, count + rnd(-2, 2));
+                }
+              }
+              countEl.textContent = formatCount(count);
             }
-            countEl.textContent = count;
+            // ২. কাউন্টডাউন শেষ (FLYING) বা ক্র্যাশ (CRASHED) হলে সংখ্যা সম্পূর্ণ স্থির থাকবে
+            // বিমানের রাউন্ড চলাকালীন সংখ্যাটি আর বাড়বে বা কমবে না।
           }, 250);
         })();
 
