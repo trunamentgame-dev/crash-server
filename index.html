@@ -1796,11 +1796,13 @@
           const avColors = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#475569'];
           const rnd = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
           let seenRound = null;
-          let target = rnd(100, 250);
+          let startCount = rnd(8, 15);
+          let target = rnd(250, 320);
           let count = target;
           function newRound() {
-            target = rnd(100, 250);
-            count = rnd(1, 3);
+            startCount = rnd(8, 15);
+            target = rnd(250, 320);
+            count = startCount;
             if (av1 && av2) {
               const i = rnd(0, avColors.length - 1);
               let j = rnd(0, avColors.length - 1);
@@ -1818,17 +1820,20 @@
               const first = seenRound === null;
               seenRound = currentRoundId;
               if (gameState === 'WAITING' || !first) newRound();
-              else { target = rnd(100, 250); count = target; }
+              else { target = rnd(250, 320); count = target; }
             }
             if (gameState === 'WAITING') {
-              if (count < target) {
-                const avg = target / 36;
-                let step = rnd(0, Math.round(avg * 2));
-                if (Math.random() < 0.12) step += rnd(4, 12); // small bursts
-                count = Math.min(target, count + step);
-              }
-            } else if (gameState === 'FLYING') {
-              if (Math.random() < 0.3) count = Math.max(1, count + rnd(-2, 2));
+              // Countdown: climb 10 -> 20 -> 50 -> 100 ... -> 250+ (never goes down)
+              const p = Math.max(0, Math.min(1, countdownProgress));
+              const ease = Math.pow(p, 1.15);
+              let want = startCount + (target - startCount) * ease;
+              want += (Math.random() - 0.4) * (target * 0.03);
+              want = Math.max(count, Math.min(target, Math.round(want)));
+              if (p >= 0.97) want = target;
+              count = want;
+            } else {
+              // Countdown over (FLYING / CRASHED): count is locked, no more changes
+              if (count !== target && gameState === 'FLYING' && count < target) count = target;
             }
             countEl.textContent = count;
           }, 250);
