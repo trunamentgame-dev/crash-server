@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="bn">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Aviator</title>
+    <title>Aviator Crash Game</title>
     <meta name="description" content="Aviator Crash Multiplier Game with Authoritative Global Round Synchronization and Realtime Payout Limit Protection" />
     <meta property="og:title" content="Aviator" />
     <meta property="og:description" content="Aviator Crash Multiplier Game with Authoritative Global Round Synchronization and Realtime Payout Limit Protection" />
@@ -123,6 +123,34 @@
         font-size: 15px;
         font-variant-numeric: tabular-nums;
         box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 90px;
+        justify-content: center;
+        transition: all 0.2s ease;
+      }
+      .balance-pill.loading {
+        color: #f59e0b;
+        border-color: rgba(245, 158, 11, 0.4);
+        font-size: 13px;
+        animation: pulseSlow 1.5s infinite;
+      }
+      @keyframes pulseSlow {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+      }
+      .user-badge {
+        font-size: 10px;
+        padding: 2px 6px;
+        background: #1f222b;
+        border: 1px solid #333744;
+        border-radius: 6px;
+        color: #9ca3af;
+        max-width: 80px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .btn-sound {
         background: #181a20;
@@ -513,7 +541,8 @@
           </div>
         </div>
         <div class="header-right">
-          <div class="balance-pill" id="headerBalance">৳0.00</div>
+          <span class="user-badge" id="userBadge" style="display:none;" title="Logged in user"></span>
+          <div class="balance-pill loading" id="headerBalance">৳ লোড হচ্ছে...</div>
           <button class="btn-sound" id="btnSound" title="Toggle Sound">
             <svg id="iconSoundOn" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/>
@@ -658,7 +687,7 @@
     <!-- Authoritative Global Engine Integration & UI Controller -->
     <script>
       (function () {
-        // 1. Firebase Project Initialization (RTDB integration for GitHub Pages & Live Sync)
+        // 1. Firebase Project Initialization
         const firebaseConfig = {
           apiKey: "AIzaSyBFaoU_cDws6YVAXFMWBnogGAQHhjfC23Q",
           authDomain: "np-trunament-bd.firebaseapp.com",
@@ -670,23 +699,23 @@
           measurementId: "G-LMHCM7J1K5"
         };
 
-        // Render server address (change this one line only, no trailing slash)
+        // Render server address
         const API_BASE = 'https://crash-server-focb.onrender.com';
 
         let auth = null;
         let rtdb = null;
 
         try {
-          if (window.firebase && !firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
+          if (window.firebase) {
+            if (!firebase.apps.length) {
+              firebase.initializeApp(firebaseConfig);
+            }
+            auth = firebase.auth();
+            rtdb = firebase.database();
           }
         } catch (e) {
           console.warn('Firebase init note:', e);
         }
-        // Auth and Database are created separately: inside some mobile-app WebViews (e.g. DOM storage
-        // disabled) firebase.auth() can fail, and that must not also take the database listener down.
-        try { if (window.firebase && firebase.apps.length) auth = firebase.auth(); } catch (e) { console.warn('Firebase auth unavailable:', e); }
-        try { if (window.firebase && firebase.apps.length) rtdb = firebase.database(); } catch (e) { console.warn('Firebase database unavailable:', e); }
 
         // 2. Sound Engine (Web Audio Synth)
         class SoundEngine {
@@ -818,33 +847,26 @@
         }
         const audio = new SoundEngine();
 
-        // 3. User Wallet & Authentication State
+        // 3. User Wallet & Authentication State (Robust Mobile & Web Session)
         let currentUid = null;
         let currentBalance = 0;
-        let isAuthReady = false;
-        let balanceLoaded = false;   // true ONLY after a real balance was read from the server / Firebase
-        let uidSource = '';          // token | parent | firebase | url
-        let lastBalanceStatus = 'not-started';
-        // Identity priority: a verified login token beats everything; an unverified ?uid= in the URL is the weakest
-        const SRC_RANK = { url: 1, firebase: 2, parent: 3, token: 4 };
+        let isBalanceLoaded = false;
+        let isBalanceFetching = false;
+        let balanceFetchPromise = null;
+        let gameIdToken = null;
 
-        function setBalanceText(txt) {
+        function updateBalanceUI(bal) {
+          isBalanceLoaded = true;
+          currentBalance = typeof bal === 'number' ? bal : Number(bal || 0);
           const el = document.getElementById('headerBalance');
-          if (el) el.innerText = txt;
+          if (el) {
+            el.classList.remove('loading');
+            el.innerText = '৳' + currentBalance.toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            });
+          }
         }
-
-        // provisional=true means "value handed over by the panel, not yet confirmed by the server"
-        function updateBalanceUI(bal, provisional) {
-          const n = typeof bal === 'number' ? bal : Number(bal || 0);
-          currentBalance = isFinite(n) ? n : 0;
-          if (!provisional) balanceLoaded = true;
-          setBalanceText('৳' + currentBalance.toLocaleString('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-          }));
-        }
-        // Never show a fake ৳0.00 before the real balance is known
-        setBalanceText('৳--');
 
         function showGameMsg(text) {
           try {
@@ -852,7 +874,7 @@
             if (!el) {
               el = document.createElement('div');
               el.id = 'gameMsgToast';
-              el.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);background:rgba(15,23,42,.95);color:#fff;border:1px solid #f59e0b;padding:8px 14px;border-radius:10px;font:600 12px sans-serif;z-index:99999;max-width:90%;text-align:center;';
+              el.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);background:rgba(15,23,42,.95);color:#fff;border:1px solid #f59e0b;padding:8px 16px;border-radius:10px;font:600 13px sans-serif;z-index:99999;max-width:92%;text-align:center;box-shadow:0 10px 25px rgba(0,0,0,0.8);';
               document.body.appendChild(el);
             }
             el.textContent = text;
@@ -861,291 +883,258 @@
             el._t = setTimeout(() => { el.style.display = 'none'; }, 3500);
           } catch (e) {}
         }
+
         const ERR_TEXT = {
-          INSUFFICIENT_BALANCE: 'ব্যালেন্স যথেষ্ট নয়',
-          BETTING_CLOSED: 'এখন বাজি ধরার সময় নয়, পরের রাউন্ডের Countdown-এর অপেক্ষা করুন',
-          BAD_UID: 'ব্যবহারকারী চেনা যায়নি (uid নেই)',
+          INSUFFICIENT_BALANCE: 'পর্যাপ্ত ব্যালেন্স নেই',
+          BETTING_CLOSED: 'এখন বাজি ধরার সময় নয়, পরবর্তী রাউন্ডের অপেক্ষা করুন',
+          BAD_UID: 'ব্যবহারকারীকে চেনা যায়নি (সঠিক UID পাওয়া যায়নি)',
           BAD_INPUT: 'বাজির অঙ্ক ১০ থেকে ১০,০০০-এর মধ্যে হতে হবে',
-          ALREADY_PLACED: 'এই প্যানেলে বাজি আগেই ধরা হয়েছে',
-          AUTH_REQUIRED: 'লগইন প্রয়োজন',
-          UID_MISMATCH: 'uid মিলছে না',
-          BAD_TOKEN: 'লগইন টোকেন ভুল'
+          ALREADY_PLACED: 'এই প্যানেলে বাজি ইতিমধ্যে ধরা হয়েছে',
+          AUTH_REQUIRED: 'লগইন সেশন প্রয়োজন',
+          UID_MISMATCH: 'UID মিলছে না',
+          BAD_TOKEN: 'লগইন সেশন মেয়াদোত্তীর্ণ বা ভুল'
         };
 
-        // ---- Login token (Firebase ID token) handed over by the User Panel / mobile app ----
-        let gameIdToken = null;
-        let tokenUid = null;
-        let lastTokenRequest = 0;
-
-        function parseJwt(tok) {
-          try {
-            let s = String(tok).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-            while (s.length % 4) s += '=';
-            return JSON.parse(atob(s));
-          } catch (e) { return null; }
-        }
-        function tokenExpired(tok) {
-          const p = parseJwt(tok);
-          return !!(p && p.exp && p.exp * 1000 <= Date.now());
-        }
-        // Ask the host (panel iframe / native app WebView) for a fresh login token
-        function requestFreshToken() {
-          const now = Date.now();
-          if (now - lastTokenRequest < 10000) return;
-          lastTokenRequest = now;
-          try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'AVITOR_NEED_TOKEN' }, '*'); } catch (e) {}
-          try { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'AVITOR_NEED_TOKEN' })); } catch (e) {}
-        }
-
-        async function authHeaders(h) {
+        function authHeaders(h) {
           const o = Object.assign({}, h || {});
-          let tok = null;
-          // 1) A live Firebase session of the SAME user: the SDK refreshes the ID token automatically
-          try {
-            if (auth && auth.currentUser && currentUid && auth.currentUser.uid === currentUid) {
-              tok = await auth.currentUser.getIdToken();
-            }
-          } catch (e) {}
-          // 2) Token handed over by the panel / app (valid for 1 hour)
-          if (!tok && gameIdToken) {
-            if (tokenExpired(gameIdToken)) requestFreshToken();
-            tok = gameIdToken;
-          }
-          if (tok) o['Authorization'] = 'Bearer ' + tok;
+          if (gameIdToken) o['Authorization'] = 'Bearer ' + gameIdToken;
           return o;
         }
 
-        function setLoginToken(tok) {
-          if (!tok || typeof tok !== 'string') return false;
-          const p = parseJwt(tok);
-          const uid = p && (p.user_id || p.sub);
-          if (!uid) return false;
-          if (tokenExpired(tok)) { requestFreshToken(); return false; }
-          gameIdToken = tok;
-          tokenUid = String(uid);
-          // Keep the session for reloads inside the same WebView (the #t= hash is removed from the URL)
-          try { sessionStorage.setItem('game_login_token', tok); } catch (e) {}
-          const sameUser = (currentUid === tokenUid);
-          attachWalletListener(tokenUid, undefined, 'token');
-          if (sameUser && !balanceLoaded) fetchUserBalance(tokenUid);   // new token for the same user: retry the balance now
-          return true;
-        }
+        // Authoritative server balance fetch with caching promise to prevent race conditions
+        async function fetchUserBalance(uid) {
+          const target = uid || currentUid;
+          if (!target) return currentBalance;
 
-        // ---- Realtime Database live balance (users/{uid}/balance) ----
-        let walletRef = null;
-        let walletRefDenied = false;
-        function detachWalletListener() {
-          if (walletRef) { try { walletRef.off(); } catch (e) {} walletRef = null; }
-        }
-        function listenRtdbBalance(uid) {
-          if (!rtdb || !uid) return;
-          detachWalletListener();
-          try {
-            const ref = rtdb.ref('users/' + uid + '/balance');
-            walletRef = ref;
-            ref.on('value', (snap) => {
-              const val = snap.val();
-              if (val !== null && isFinite(Number(val))) updateBalanceUI(Number(val));
-            }, (err) => {
-              // Permission denied (no Firebase session yet): the listener is cancelled by Firebase.
-              // Remember it, so it is re-attached as soon as the Firebase login is restored. The server balance still works.
-              walletRef = null;
-              walletRefDenied = true;
-              console.warn('Firebase RTDB balance listen error:', err);
-            });
-          } catch (e) {
-            console.warn('Firebase attach error:', e);
+          if (isBalanceFetching && balanceFetchPromise) {
+            return balanceFetchPromise;
           }
+
+          isBalanceFetching = true;
+          balanceFetchPromise = (async () => {
+            try {
+              const res = await fetch(`${API_BASE}/api/user/balance?uid=${encodeURIComponent(target)}`, {
+                headers: authHeaders(),
+                cache: 'no-store'
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (typeof data.balance === 'number') {
+                  updateBalanceUI(data.balance);
+                  return data.balance;
+                }
+              } else if (res.status === 401 && gameIdToken) {
+                // If token expired, retry without bad token header so server can use bodyUid if allowed
+                const retryRes = await fetch(`${API_BASE}/api/user/balance?uid=${encodeURIComponent(target)}`, { cache: 'no-store' });
+                if (retryRes.ok) {
+                  const retryData = await retryRes.json();
+                  if (typeof retryData.balance === 'number') {
+                    updateBalanceUI(retryData.balance);
+                    return retryData.balance;
+                  }
+                }
+              }
+            } catch(e) {
+              console.warn('Balance fetch network note:', e);
+            } finally {
+              isBalanceFetching = false;
+            }
+            return currentBalance;
+          })();
+
+          return balanceFetchPromise;
         }
 
         // Attach verified wallet listener
-        function attachWalletListener(uid, initialBal, source) {
-          if (!uid) return;
-          uid = String(uid);
-          source = source || 'url';
-          if (currentUid === uid && isAuthReady) {
-            if (typeof initialBal === 'number' && !balanceLoaded) updateBalanceUI(initialBal, true);
-            return;
+        function attachWalletListener(uid, initialBal, token) {
+          if (!uid || typeof uid !== 'string') return;
+          const cleanUid = uid.trim();
+          if (!cleanUid) return;
+
+          currentUid = cleanUid;
+
+          // Save to sessionStorage for WebView navigation resilience
+          try { sessionStorage.setItem('aviator_uid', cleanUid); } catch(e){}
+
+          if (token && typeof token === 'string') {
+            gameIdToken = token.trim();
+            try { sessionStorage.setItem('aviator_token', gameIdToken); } catch(e){}
           }
-          // A weaker (less trustworthy) source must never replace an identity that is already established
-          if (currentUid && (SRC_RANK[source] || 0) < (SRC_RANK[uidSource] || 0)) {
-            console.warn('Ignored uid from weaker source:', source);
-            return;
+
+          // Show User Badge in UI
+          const uBadge = document.getElementById('userBadge');
+          if (uBadge) {
+            uBadge.style.display = 'inline-block';
+            uBadge.textContent = cleanUid.length > 8 ? cleanUid.substring(0, 7) + '…' : cleanUid;
           }
-          detachWalletListener();
-          currentUid = uid;
-          uidSource = source;
-          isAuthReady = true;
-          balanceLoaded = false;
-          currentBalance = 0;
-          setBalanceText('৳ ...');
-          if (typeof initialBal === 'number') updateBalanceUI(initialBal, true);
 
-          // Fetch authoritative server balance for uid (with automatic retries: cold start / slow mobile network)
-          fetchUserBalance(uid).then((r) => { if (!r.ok && r.reason !== 'AUTH') scheduleBalanceRetry(uid, 1); });
-          listenRtdbBalance(uid);
-        }
+          if (typeof initialBal === 'number') {
+            updateBalanceUI(initialBal);
+          }
 
-        function scheduleBalanceRetry(uid, n) {
-          if (n > 6) return;
-          setTimeout(async () => {
-            if (uid !== currentUid || balanceLoaded) return;
-            const r = await fetchUserBalance(uid);
-            if (!r.ok && r.reason !== 'AUTH') scheduleBalanceRetry(uid, n + 1);
-          }, Math.min(2000 * n, 8000));
-        }
+          // Immediately fetch authoritative server balance
+          fetchUserBalance(cleanUid);
 
-        // Keep the balance fresh (deposits / withdrawals made while the game is open)
-        setInterval(() => { if (currentUid) fetchUserBalance(currentUid); }, 15000);
-        // Mobile apps: refresh when the app comes back to the foreground / network returns
-        document.addEventListener('visibilitychange', () => { if (!document.hidden && currentUid) fetchUserBalance(currentUid); });
-        window.addEventListener('online', () => { if (currentUid) fetchUserBalance(currentUid); });
-
-        // Returns {ok:true,balance} or {ok:false,reason:'AUTH'|'SERVER'|'NETWORK'|'NO_UID'|'STALE',error?}
-        async function fetchUserBalance(uid) {
-          const target = uid || currentUid;
-          if (!target) { lastBalanceStatus = 'no-uid'; return { ok: false, reason: 'NO_UID' }; }
-          try {
-            const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-            const timer = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
-            let res;
+          // Direct live listener from Firebase RTDB (users/{uid}/balance)
+          if (rtdb) {
             try {
-              res = await fetch(`${API_BASE}/api/user/balance?uid=${encodeURIComponent(target)}`, {
-                headers: await authHeaders(),
-                cache: 'no-store',
-                signal: ctrl ? ctrl.signal : undefined
+              // Unsubscribe previous if exists
+              rtdb.ref('users/' + cleanUid + '/balance').off();
+              rtdb.ref('users/' + cleanUid + '/balance').on('value', (snap) => {
+                const val = snap.val();
+                if (val !== null && !isNaN(val)) {
+                  updateBalanceUI(Number(val));
+                }
+              }, (err) => {
+                // If client permission denied (e.g. WebView without JS Firebase Auth),
+                // smoothly rely on server-side authoritative balance polling!
+                console.log('RTDB direct listener restricted; falling back to authoritative server balance.');
               });
-            } finally { if (timer) clearTimeout(timer); }
-            if (target !== currentUid) return { ok: false, reason: 'STALE' };
-            if (res.status === 401 || res.status === 403) {
-              lastBalanceStatus = 'auth-' + res.status;
-              requestFreshToken();
-              return { ok: false, reason: 'AUTH' };
+            } catch(e) {
+              console.warn('Firebase RTDB attach error:', e);
             }
-            if (!res.ok) { lastBalanceStatus = 'http-' + res.status; return { ok: false, reason: 'SERVER' }; }
-            const data = await res.json();
-            const n = Number(data && data.balance);
-            if (data && data.balance !== null && data.balance !== undefined && data.balance !== '' && isFinite(n)) {
-              updateBalanceUI(n);
-              lastBalanceStatus = 'ok';
-              return { ok: true, balance: n };
-            }
-            lastBalanceStatus = 'no-balance:' + ((data && data.error) || '');
-            if (data && (data.error === 'AUTH_REQUIRED' || data.error === 'BAD_TOKEN')) { requestFreshToken(); return { ok: false, reason: 'AUTH', error: data.error }; }
-            return { ok: false, reason: 'SERVER', error: data && data.error };
-          } catch (e) {
-            lastBalanceStatus = 'network';
-            return { ok: false, reason: 'NETWORK' };
           }
         }
 
-        // Called before every bet: never says "insufficient balance" just because the balance has not loaded yet.
-        // A stale/zero local value is re-read from the server first; a real shortage is still rejected.
-        function walletProblemText(r) {
-          if (!currentUid) return 'ব্যবহারকারী চেনা যায়নি, অ্যাপের User Panel থেকে Play Now দিয়ে গেমটি আবার খুলুন';
-          if (r && r.reason === 'AUTH') return 'লগইন সেশন যাচাই হয়নি, অ্যাপ থেকে গেমটি আবার খুলুন';
-          if (r && r.error && ERR_TEXT[r.error]) return ERR_TEXT[r.error];
-          return 'ব্যালেন্স লোড করা যায়নি, ইন্টারনেট/সার্ভার সংযোগ দেখে আবার চেষ্টা করুন';
-        }
-        async function ensureBalanceReady(amount) {
-          if (!currentUid) return { ok: false, msg: walletProblemText(null) };
-          if (balanceLoaded && currentBalance >= amount) return { ok: true };
-          let last = null;
-          for (let i = 0; i < 2; i++) {
-            last = await fetchUserBalance(currentUid);
-            if (last.ok || last.reason === 'AUTH' || last.reason === 'STALE') break;
-          }
-          if (balanceLoaded && currentBalance >= amount) return { ok: true };
-          if (balanceLoaded) return { ok: false, msg: 'ব্যালেন্স যথেষ্ট নয় (আপনার ব্যালেন্স ৳' + currentBalance.toFixed(2) + ')' };
-          return { ok: false, msg: walletProblemText(last) };
-        }
+        // -------------------------------------------------------------
+        // Comprehensive Multi-Channel User Identification Resolver
+        // -------------------------------------------------------------
+        function detectUserSession() {
+          let resolvedUid = null;
+          let resolvedToken = null;
 
-        // 1. Login token from the panel / app: URL hash (#t=...) or query (?t=...), else the copy saved for this WebView session
-        (function readLoginToken() {
+          // 1. Check URL Query Parameters: ?uid=..., ?userId=..., ?user_id=..., ?token=...
           try {
-            let tok = null;
-            const m = /[#&](?:t|token)=([A-Za-z0-9._-]+)/.exec(window.location.hash || '');
-            if (m) tok = m[1];
-            const qp = new URLSearchParams(window.location.search);
-            if (!tok) tok = qp.get('t') || qp.get('token');
-            if (tok) {
-              qp.delete('t'); qp.delete('token');
-              const qs = qp.toString();
-              history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));   // hide the token from the address bar
-            } else {
-              try { tok = sessionStorage.getItem('game_login_token'); } catch (e) {}
-            }
-            if (tok && !setLoginToken(tok)) { try { sessionStorage.removeItem('game_login_token'); } catch (e) {} }
-          } catch (e) { console.warn('Login token read failed', e); }
-        })();
+            const urlParams = new URLSearchParams(window.location.search);
+            resolvedUid = urlParams.get('uid') ||
+                          urlParams.get('userId') ||
+                          urlParams.get('user_id') ||
+                          urlParams.get('user') ||
+                          urlParams.get('player_id') ||
+                          urlParams.get('u');
 
-        // 2. URL Query Parameters (?userId=... or ?uid=... or ?user=...): unverified, weakest source
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlUid = urlParams.get('userId') || urlParams.get('uid') || urlParams.get('user');
-        if (urlUid) {
-          attachWalletListener(urlUid, undefined, 'url');
+            resolvedToken = urlParams.get('token') ||
+                            urlParams.get('idToken') ||
+                            urlParams.get('t') ||
+                            urlParams.get('auth');
+          } catch(e){}
+
+          // 2. Check URL Hash: #uid=..., #userId=..., #t=..., #token=...
+          if (!resolvedUid || !resolvedToken) {
+            try {
+              const hash = window.location.hash || '';
+              const mToken = /[#&](?:t|token|idToken)=([A-Za-z0-9._-]+)/.exec(hash);
+              if (mToken && !resolvedToken) {
+                resolvedToken = mToken[1];
+              }
+              const mUid = /[#&](?:uid|userId|user_id)=([A-Za-z0-9._-]+)/.exec(hash);
+              if (mUid && !resolvedUid) {
+                resolvedUid = mUid[1];
+              }
+
+              // Extract UID from JWT payload if available
+              if (resolvedToken && !resolvedUid) {
+                try {
+                  const parts = resolvedToken.split('.');
+                  if (parts.length >= 2) {
+                    const payloadStr = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+                    const payload = JSON.parse(payloadStr);
+                    resolvedUid = payload.user_id || payload.sub || payload.uid;
+                  }
+                } catch(e){}
+              }
+            } catch(e){}
+          }
+
+          // 3. Check Android JavascriptInterface (window.Android, window.AndroidBridge, window.TournamentApp)
+          if (!resolvedUid) {
+            try {
+              const bridge = window.Android || window.AndroidBridge || window.TournamentApp || window.MostWinApp || window.JSBridge;
+              if (bridge) {
+                if (typeof bridge.getUserId === 'function') resolvedUid = bridge.getUserId();
+                else if (typeof bridge.getUid === 'function') resolvedUid = bridge.getUid();
+                else if (typeof bridge.getUser === 'function') resolvedUid = bridge.getUser();
+
+                if (typeof bridge.getToken === 'function' && !resolvedToken) resolvedToken = bridge.getToken();
+                else if (typeof bridge.getIdToken === 'function' && !resolvedToken) resolvedToken = bridge.getIdToken();
+              }
+            } catch(e){}
+          }
+
+          // 4. Check Web Storage (sessionStorage / localStorage)
+          if (!resolvedUid) {
+            try {
+              resolvedUid = sessionStorage.getItem('aviator_uid') || localStorage.getItem('aviator_uid') || localStorage.getItem('userId') || localStorage.getItem('uid');
+              if (!resolvedToken) {
+                resolvedToken = sessionStorage.getItem('aviator_token') || localStorage.getItem('aviator_token');
+              }
+            } catch(e){}
+          }
+
+          // 5. Check Firebase Auth Current User
+          if (!resolvedUid && auth && auth.currentUser && !auth.currentUser.isAnonymous) {
+            resolvedUid = auth.currentUser.uid;
+          }
+
+          if (resolvedUid) {
+            attachWalletListener(resolvedUid, undefined, resolvedToken);
+            return true;
+          }
+          return false;
         }
 
-        // 3. Firebase Auth session (restored asynchronously inside a WebView)
+        // Execute immediate session detection
+        detectUserSession();
+
+        // Firebase Auth State Listener (handles desktop Chrome login / token refresh)
         if (auth) {
-          try {
-            if (auth.currentUser && !auth.currentUser.isAnonymous) attachWalletListener(auth.currentUser.uid, undefined, 'firebase');
-            auth.onAuthStateChanged((user) => {
-              if (!user || user.isAnonymous) return;
-              attachWalletListener(user.uid, undefined, 'firebase');
-              if (walletRefDenied && currentUid === user.uid) { walletRefDenied = false; listenRtdbBalance(user.uid); }
-            });
-          } catch (e) { console.warn('Auth listener failed', e); }
+          auth.onAuthStateChanged(async (user) => {
+            if (user && !user.isAnonymous) {
+              try {
+                const tok = await user.getIdToken();
+                attachWalletListener(user.uid, undefined, tok);
+              } catch(e) {
+                attachWalletListener(user.uid);
+              }
+            }
+          });
         }
 
-        // 4. Session handshake: parent iframe (panel), Android/iOS WebView injection, React Native WebView
-        function handleSessionMessage(d) {
-          if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return; } }
-          if (!d || !d.type) return;
-          if (d.type === 'SET_USER_SESSION') {
-            if (d.token) setLoginToken(d.token);   // a verified token decides the user
-            if (d.uid && !(tokenUid && String(d.uid) !== tokenUid)) {
-              attachWalletListener(d.uid, typeof d.balance === 'number' ? d.balance : undefined, 'parent');
+        // PostMessage listener (supports both window and document for Android WebView / Flutter / React Native)
+        function handleIncomingMessage(event) {
+          let d = event.data;
+          if (!d) return;
+
+          // Parse stringified JSON if sent as string from WebView
+          if (typeof d === 'string') {
+            try { d = JSON.parse(d); } catch (e) { return; }
+          }
+          if (!d || typeof d !== 'object') return;
+
+          if (d.type === 'SET_USER_SESSION' || d.type === 'USER_DATA' || d.type === 'LOGIN_SUCCESS') {
+            const uid = d.uid || d.userId || d.user_id;
+            if (uid) {
+              attachWalletListener(uid, typeof d.balance === 'number' ? d.balance : undefined, d.token || d.idToken);
             }
-          } else if (d.type === 'SET_TOKEN' && d.token) {
-            setLoginToken(d.token);
           } else if (d.type === 'SET_BALANCE' && typeof d.balance === 'number') {
-            updateBalanceUI(d.balance, true);   // provisional; replaced by the server/Firebase value
+            updateBalanceUI(d.balance);
           }
         }
-        // For native apps: webView.evaluateJavascript("window.setGameSession({uid:'..',token:'..'})", null)
-        window.setGameSession = function (s) { handleSessionMessage(Object.assign({ type: 'SET_USER_SESSION' }, s || {})); };
+        window.addEventListener('message', handleIncomingMessage);
+        document.addEventListener('message', handleIncomingMessage);
 
+        // Iframe parent handshake
         if (window.parent && window.parent !== window) {
           window.parent.postMessage({ type: 'AVITOR_READY' }, '*');
         }
-        try { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'AVITOR_READY' })); } catch (e) {}
-        window.addEventListener('message', (event) => {
-          // only the embedding panel, the app itself or the opener may hand over a session
-          if (event.source && event.source !== window.parent && event.source !== window && event.source !== window.opener) return;
-          handleSessionMessage(event.data);
+
+        // Periodically keep balance fresh (and on window refocus)
+        setInterval(() => { if (currentUid) fetchUserBalance(currentUid); }, 12000);
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden && currentUid) fetchUserBalance(currentUid);
         });
-        document.addEventListener('message', (event) => handleSessionMessage(event.data));   // React Native WebView (Android)
-        setTimeout(() => { if (!currentUid) requestFreshToken(); }, 1500);
 
-        // Optional on-screen diagnostics for phones: open the game with ?gamedebug=1
-        if (new URLSearchParams(window.location.search).get('gamedebug') === '1') {
-          const dbg = document.createElement('div');
-          dbg.style.cssText = 'position:fixed;left:4px;bottom:4px;z-index:99999;background:rgba(0,0,0,.85);color:#0f0;font:10px monospace;padding:6px;border-radius:6px;max-width:92%;white-space:pre-wrap;pointer-events:none;';
-          document.body.appendChild(dbg);
-          setInterval(() => {
-            const p = gameIdToken ? parseJwt(gameIdToken) : null;
-            dbg.textContent = [
-              'uid: ' + (currentUid ? currentUid.slice(0, 6) + '…' : 'NONE') + ' (' + (uidSource || '-') + ')',
-              'token: ' + (!gameIdToken ? 'none' : (tokenExpired(gameIdToken) ? 'EXPIRED' : 'ok' + (p && p.exp ? ' exp ' + new Date(p.exp * 1000).toLocaleTimeString() : ''))),
-              'firebase auth: ' + (auth ? (auth.currentUser ? 'user ' + auth.currentUser.uid.slice(0, 6) + '…' : 'no session') : 'unavailable') + ' | rtdb: ' + (rtdb ? (walletRefDenied ? 'denied' : 'ok') : 'unavailable'),
-              'balance loaded: ' + balanceLoaded + ' (' + currentBalance + ') | last fetch: ' + lastBalanceStatus
-            ].join('\n');
-          }, 1000);
-        }
-
-
-        // 4. Global State Synchronization via Server SSE / RTDB
+        // 4. Global State Synchronization via Server SSE / Polling
         let gameState = 'WAITING'; // 'WAITING' | 'FLYING' | 'CRASHED'
         let currentRoundId = 'rnd_' + Date.now();
         let currentMultiplier = 1.00;
@@ -1153,7 +1142,6 @@
         let countdownSeconds = 10;
         let flewAwayOffset = 0;
 
-        // Betting state per panel
         const panels = {
           1: { amount: 10, step: 10, seq: 0, busy: false, placed: false, queued: false, cashedOut: false, win: 0, mult: 1, autoBet: false, autoCash: false, cashMult: 2.0 },
           2: { amount: 10, step: 10, seq: 0, busy: false, placed: false, queued: false, cashedOut: false, win: 0, mult: 1, autoBet: false, autoCash: false, cashMult: 2.0 }
@@ -1163,24 +1151,39 @@
 
         // 5. Authoritative Bet and Cashout Transactions
         async function executeBetTransaction(panel, amount, round) {
+          // Guard 1: Detect user identity if not already established
+          if (!currentUid) {
+            detectUserSession();
+          }
+          if (!currentUid) {
+            showGameMsg('ব্যবহারকারীকে চেনা যায়নি! অনুগ্রহ করে অ্যাপ বা ইউজার প্যানেল থেকে লগইন করে গেমটি খুলুন।');
+            return false;
+          }
+
+          // Guard 2: Ensure balance is actually loaded before falsely rejecting
+          if (!isBalanceLoaded) {
+            showGameMsg('ব্যালেন্স লোড হচ্ছে, অনুগ্রহ করে এক মুহূর্ত অপেক্ষা করুন...');
+            await fetchUserBalance(currentUid);
+          }
+
+          // Guard 3: Genuine balance verification
+          if (currentBalance < amount) {
+            showGameMsg('পর্যাপ্ত ব্যালেন্স নেই (আপনার বর্তমান ব্যালেন্স ৳' + currentBalance.toFixed(2) + ')');
+            return false;
+          }
+
           const nextSeq = (panels[panel].seq || 0) + 1;
-          const idempotencyKey = `${round}_${currentUid || 'usr'}_p${panel}_bet_${nextSeq}`;
+          const idempotencyKey = `${round}_${currentUid}_p${panel}_bet_${nextSeq}`;
           if (processedKeys.has(idempotencyKey)) return false;
-          if (!currentUid) { showGameMsg(walletProblemText(null)); requestFreshToken(); return false; }
-          const betUid = currentUid;
-          // Wait for the real balance (never reject only because it has not loaded yet)
-          const ready = await ensureBalanceReady(amount);
-          if (!ready.ok) { showGameMsg(ready.msg); return false; }
-          if (betUid !== currentUid) return false;
 
           processedKeys.add(idempotencyKey);
 
           try {
             const res = await fetch(API_BASE + '/api/game/bet', {
               method: 'POST',
-              headers: await authHeaders({ 'Content-Type': 'application/json' }),
+              headers: authHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
-                uid: betUid,
+                uid: currentUid,
                 panel,
                 amount,
                 idempotencyKey,
@@ -1197,16 +1200,12 @@
               return true;
             } else {
               processedKeys.delete(idempotencyKey);
-              console.warn('BET FAILED', data);
-              if (data.error === 'AUTH_REQUIRED' || data.error === 'BAD_TOKEN') requestFreshToken();
-              if (data.error === 'INSUFFICIENT_BALANCE') fetchUserBalance(currentUid);   // show the real balance
-              showGameMsg(ERR_TEXT[data.error] || ('বাজি ব্যর্থ: ' + (data.error || 'unknown')));
+              showGameMsg(ERR_TEXT[data.error] || ('বাজি গ্রহণ করা যায়নি: ' + (data.error || 'unknown')));
               return false;
             }
           } catch(e) {
             processedKeys.delete(idempotencyKey);
-            console.warn('BET ERROR', e);
-            showGameMsg('সার্ভারে পৌঁছানো যাচ্ছে না, আবার চেষ্টা করুন');
+            showGameMsg('সার্ভারের সাথে সংযোগ স্থাপন করা যায়নি, আবার চেষ্টা করুন');
             return false;
           }
         }
@@ -1215,7 +1214,6 @@
         async function executeCancelTransaction(panel, round) {
           const st = panels[panel];
           const refund = st.betAmount || st.amount;
-          if (!currentUid) return false;
           const idempotencyKey = `${round}_${currentUid || 'usr'}_p${panel}_cancel_${st.seq}`;
           if (processedKeys.has(idempotencyKey)) return false;
           processedKeys.add(idempotencyKey);
@@ -1223,9 +1221,9 @@
           try {
             const res = await fetch(API_BASE + '/api/game/cancel', {
               method: 'POST',
-              headers: await authHeaders({ 'Content-Type': 'application/json' }),
+              headers: authHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
-                uid: currentUid,
+                uid: currentUid || 'guest',
                 panel,
                 amount: refund,
                 round,
@@ -1248,7 +1246,6 @@
         }
 
         async function executeCashoutTransaction(panel, round) {
-          if (!currentUid) return;
           const idempotencyKey = `${round}_${currentUid || 'usr'}_p${panel}_cashout`;
           if (processedKeys.has(idempotencyKey)) return;
           processedKeys.add(idempotencyKey);
@@ -1256,9 +1253,9 @@
           try {
             const res = await fetch(API_BASE + '/api/game/cashout', {
               method: 'POST',
-              headers: await authHeaders({ 'Content-Type': 'application/json' }),
+              headers: authHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
-                uid: currentUid,
+                uid: currentUid || 'guest',
                 panel,
                 idempotencyKey
               })
@@ -1267,7 +1264,6 @@
             const data = await res.json();
 
             if (data.success) {
-              // APPROVED: Cashout succeeded within Global Payout Limit!
               audio.cashout();
               const st = panels[panel];
               st.cashedOut = true;
@@ -1276,10 +1272,6 @@
               if (typeof data.balance === 'number') updateBalanceUI(data.balance);
               updatePanelUI(panel);
             } else {
-              // REJECTED (e.g. REJECTED_PAYOUT_LIMIT or round crashed)
-              // STRICT RULE: No alert, no popup, no toast, no error message!
-              // The cash out is simply rejected, no payout added, balance unchanged.
-              // Normal crash animation continues without interruption.
               const st = panels[panel];
               st.cashedOut = false;
             }
@@ -1295,7 +1287,6 @@
           executeCashoutTransaction(p, currentRoundId);
         }
 
-        // Update Panel UI based on authoritative state
         function updatePanelUI(p) {
           const state = panels[p];
           const btn = document.getElementById('btnAction' + p);
@@ -1342,7 +1333,6 @@
           }
         }
 
-        // Apply Authoritative State from Server
         let lastServerMsg = 0;
         const pageLoadedAt = Date.now();
         function applyAuthoritativeState(srv) {
@@ -1369,12 +1359,15 @@
             flewAwayOffset = 0;
             populateTableBets();
 
-            // Trigger auto-bets if set
+            // Refresh user balance at round transition
+            if (currentUid) fetchUserBalance(currentUid);
+
+            // Trigger auto-bets if set and balance loaded
             [1, 2].forEach((p) => {
               const st = panels[p];
               st.cashedOut = false;
               st.win = 0;
-              if (st.autoBet && !st.placed) {
+              if (st.autoBet && !st.placed && isBalanceLoaded && currentBalance >= st.amount) {
                 executeBetTransaction(p, st.amount, currentRoundId).then((ok) => {
                   st.placed = ok;
                   updatePanelUI(p);
@@ -1424,17 +1417,13 @@
             [1, 2].forEach(p => updatePanelUI(p));
           }
 
-          // Sync history pills if provided
           if (srv.history && Array.isArray(srv.history)) {
             syncHistoryPills(srv.history);
           }
         }
 
-        // Connect to Server SSE, with a reliable polling fallback.
-        // If the live stream fails or stays silent (some hosts/proxies block SSE),
-        // the game keeps updating by polling /api/game/state every 500ms.
+        // Connect to Server SSE with auto-recovery polling fallback
         let pollTimer = null;
-        let sseRef = null;
         function startPolling() {
           if (pollTimer) return;
           fetchStatePolling();
@@ -1446,7 +1435,6 @@
         function connectServerEvents() {
           try {
             const es = new EventSource(API_BASE + '/api/game/events');
-            sseRef = es;
             es.onmessage = (event) => {
               try {
                 const msg = JSON.parse(event.data);
@@ -1476,7 +1464,6 @@
           } catch(e){}
         }
 
-        // Watchdog: if nothing arrived for 2.5s, fall back to polling
         setInterval(() => {
           if (Date.now() - lastServerMsg > 2500) startPolling();
         }, 1000);
@@ -1580,20 +1567,18 @@
           // Propeller
           c.save();
           c.translate(32, -0.5);
-          // nose cap connecting fuselage to propeller hub
           c.fillStyle = '#b80028';
           c.beginPath();
           c.ellipse(-3, 0, 5, 3.6, 0, 0, Math.PI * 2);
           c.fill();
-          // blurred prop disc (seen edge-on from the side)
+
           c.fillStyle = 'rgba(255,255,255,0.22)';
           c.beginPath();
           c.ellipse(0, 0, 3, 16, 0, 0, Math.PI * 2);
           c.fill();
-          // two blades spinning around the nose axis (slower angle so the spin is clearly visible)
+
           const spin = propAngle * 0.4;
           c.lineCap = 'round';
-          // ghost trail of earlier blade positions = motion blur that shows the rotation direction
           for (let g = 4; g >= 1; g--) {
             const ga = spin - g * 0.28;
             c.strokeStyle = `rgba(255,255,255,${0.07 * (5 - g)})`;
@@ -1604,17 +1589,15 @@
           [0, Math.PI / 2].forEach((off, i) => {
             const ang = spin + off;
             const len = Math.cos(ang) * 15;
-            // blade facing the viewer is bright, the one turning away is darker
             const facing = Math.sin(ang) > 0;
             c.strokeStyle = i === 0 ? (facing ? '#ff3b63' : '#c4002b') : (facing ? '#ff6b88' : '#8f0020');
             c.lineWidth = 3.4;
             c.beginPath(); c.moveTo(0, -len); c.lineTo(0, len); c.stroke();
-            // blade tips: small white dots so the moving ends are easy to follow
+
             c.fillStyle = '#ffffff';
             c.beginPath(); c.arc(0, -len, 1.5, 0, Math.PI * 2); c.fill();
             c.beginPath(); c.arc(0, len, 1.5, 0, Math.PI * 2); c.fill();
           });
-          // hub
           c.fillStyle = '#ffd7de';
           c.beginPath();
           c.arc(0, 0, 2.6, 0, Math.PI * 2);
@@ -1625,12 +1608,10 @@
         }
 
         let angleTick = 0;
-
-        // Camera / parallax state (smoothed so nothing jumps)
         let camZoom = 1;
         let bgSpeed = 0.25;
         let bgX = 0, bgY = 0;
-        let climb = 0;   // 0..1 : how far the plane has climbed (reaches 1 at 2.00x, then holds)
+        let climb = 0;
         let planeTilt = -0.32;
         const mod = (a, m) => ((a % m) + m) % m;
         const bgStreaks = Array.from({ length: 30 }, () => ({
@@ -1658,17 +1639,16 @@
           ctx.fillStyle = bgGrad;
           ctx.fillRect(0, 0, w, h);
 
-          // Camera values: zoom grows slowly with height, background scrolls opposite to the plane
           const isFly = gameState === 'FLYING' || gameState === 'CRASHED';
           const lv = isFly ? Math.min(0.86, Math.log(Math.max(1, currentMultiplier)) / 3.2) : 0;
           camZoom += ((1 + lv * 0.32) - camZoom) * (gameState === 'WAITING' ? 0.1 : 0.05);
-          // Climb: 1.00x -> 2.00x the plane rises to 2/3 of the screen height, then holds there
+
           if (gameState === 'WAITING') climb = 0;
           else {
             const pr = Math.max(0, Math.min(1, currentMultiplier - 1));
             climb += ((1 - (1 - pr) * (1 - pr)) - climb) * 0.12;
           }
-          // Once the plane has climbed, the background rushes backward fast (feels very fast)
+
           const spdTarget = gameState === 'FLYING' ? 0.8 + climb * 3.5 + lv * 2.5 : (gameState === 'CRASHED' ? 0 : 0.25);
           bgSpeed += (spdTarget - bgSpeed) * 0.06;
           bgX += bgSpeed;
@@ -1676,7 +1656,6 @@
           const camBegin = () => { ctx.save(); ctx.translate(0, h); ctx.scale(camZoom, camZoom); ctx.translate(0, -h); };
           const camEnd = () => ctx.restore();
 
-          // Background layers (rays, speed streaks) zoom together with the plane
           camBegin();
 
           // Perspective Rays
@@ -1695,10 +1674,9 @@
           }
           ctx.restore();
 
-          // Speed streaks (move left & down = opposite to plane's forward/up path)
+          // Speed streaks
           const spanX = w + 160, spanY = h + 120;
           ctx.save();
-          // Speed streaks fade in as speed rises
           const streakA = Math.max(0, Math.min(0.4, (bgSpeed - 0.3) * 0.12));
           if (streakA > 0.004) {
             ctx.strokeStyle = `rgba(255,255,255,${streakA})`;
@@ -1724,11 +1702,10 @@
             drawAirplane(ctx, 52, runwayY, planeTilt, angleTick * 0.7);
             camEnd();
 
-            // Brand banner: MOSTWIN88 / OFFICIAL GAME EXPERIENCE
+            // Brand banner: MOSTWIN88
             ctx.save();
             const cx = w / 2;
             const spaced = (txt, x, y, gap) => {
-              // manual letter-spacing (works in every browser), centered on x
               const chars = Array.from(txt);
               const widths = chars.map((c) => ctx.measureText(c).width);
               const total = widths.reduce((a, b) => a + b, 0) + gap * (chars.length - 1);
@@ -1739,7 +1716,6 @@
             };
             ctx.textBaseline = 'alphabetic';
 
-            // Title: MOSTWIN88 (gold gradient + soft glow)
             const titleSize = Math.max(20, Math.min(30, w * 0.075));
             ctx.font = `900 ${titleSize}px 'Segoe UI', system-ui, -apple-system, sans-serif`;
             const tg = ctx.createLinearGradient(0, 18, 0, 18 + titleSize);
@@ -1752,7 +1728,6 @@
             spaced('MOSTWIN88', cx, 18 + titleSize * 0.85, 3);
             ctx.shadowBlur = 0;
 
-            // Subtitle: OFFICIAL GAME EXPERIENCE with decorative lines
             const subY = 18 + titleSize * 0.85 + 21;
             ctx.font = "600 9.5px 'Segoe UI', system-ui, -apple-system, sans-serif";
             ctx.fillStyle = 'rgba(255,255,255,0.82)';
@@ -1768,7 +1743,6 @@
               ctx.strokeStyle = lg;
               ctx.lineWidth = 1;
               ctx.beginPath(); ctx.moveTo(x0, lineY); ctx.lineTo(x1, lineY); ctx.stroke();
-              // small diamond next to the text
               const dx = cx + dir * (subW / 2 + 5);
               ctx.fillStyle = '#fbbf24';
               ctx.beginPath();
@@ -1805,24 +1779,19 @@
             ctx.fillText(`Starting in ${countdownSeconds.toFixed(1)}s`, w / 2, barY + 22);
 
           } else if (gameState === 'FLYING' || gameState === 'CRASHED') {
-            const logVal = lv;
-            // Desired on-screen position (kept inside the frame), converted to world
-            // coordinates so that after the camera zoom the plane lands exactly there.
             const hover = gameState === 'FLYING' ? Math.sin(angleTick * 0.06) * 3 : 0;
             const wantX = Math.min(w - 55, 52 + climb * (w * 0.6 - 52)) + hover * 0.6;
-            const wantY = runwayY - climb * (runwayY - h / 3) + hover;   // climb = 1 -> plane at 2/3 of the height
+            const wantY = runwayY - climb * (runwayY - h / 3) + hover;
             const planeX = wantX / camZoom;
             const planeY = h + (wantY - h) / camZoom;
             const ctrlX = planeX * 0.52;
 
-            // Nose follows the direction of the flight path (tangent of the trail at the plane)
             const tanAng = Math.atan2(planeY - h, planeX - ctrlX);
             const levelOut = Math.max(0, Math.min(1, (climb - 0.8) / 0.2));
             const tiltTarget = (Math.max(-0.7, Math.min(-0.12, tanAng))) * (1 - levelOut) + (-0.14) * levelOut;
             planeTilt += (tiltTarget - planeTilt) * 0.08;
 
             camBegin();
-            // Gradient curve trail
             ctx.save();
             ctx.beginPath();
             ctx.moveTo(0, h);
@@ -1838,7 +1807,6 @@
             ctx.fillStyle = trailGrad;
             ctx.fill();
 
-            // Glowing line
             ctx.beginPath();
             ctx.moveTo(0, h);
             ctx.quadraticCurveTo(ctrlX, h, planeX, planeY);
@@ -1886,7 +1854,6 @@
             ctx.restore();
           }
 
-          // Connection status (shown only when the server is not sending game data)
           if (Date.now() - Math.max(lastServerMsg, pageLoadedAt) > 4000) {
             ctx.save();
             ctx.textAlign = 'center';
@@ -1905,7 +1872,6 @@
         const bots = ['d***5', 'r***8', 's***2', 'k***9', 'm***7', 'a***4', 't***1', 'b***3', 'z***0', 'h***6', 'p***9', 'n***2'];
         let activeBotBets = [];
 
-        // Cartoon boy/girl avatar generator (inline SVG, no external images)
         function cartoonAvatar() {
           const pick = (a) => a[Math.floor(Math.random() * a.length)];
           const skin = pick(['#f5d0b0', '#e9b98f', '#d9a074', '#c68642', '#a9703f', '#8d5524']);
@@ -1977,109 +1943,52 @@
           });
         }
 
-        // Auto Live User counter: naturally fluctuates during countdown (e.g. 10, 20, 50, 100, 150, 200, 250+), freezes when countdown ends
+        // Live players counter
         (function () {
           const countEl = document.getElementById('playerCount');
           const av1 = document.getElementById('pcAv1');
           const av2 = document.getElementById('pcAv2');
           if (!countEl) return;
-
           const avColors = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#475569'];
           const rnd = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
-
-          function formatCount(val) {
-            return val >= 250 ? '250+' : String(val);
-          }
-
-          function refreshAvatars() {
-            if (!av1 || !av2) return;
-            const i = rnd(0, avColors.length - 1);
-            let j = rnd(0, avColors.length - 1);
-            if (j === i) j = (j + 1) % avColors.length;
-            av1.style.background = avColors[i];
-            av2.style.background = avColors[j];
-            av1.innerHTML = cartoonAvatar();
-            av2.innerHTML = cartoonAvatar();
-          }
-
           let seenRound = null;
-          let lastGameState = null;
-          let target = rnd(210, 265);
-          let count = rnd(8, 15);
-
-          function startNewCountdown() {
-            target = rnd(210, 265);
-            count = rnd(8, 15);
-            refreshAvatars();
-            countEl.textContent = formatCount(count);
+          let target = rnd(100, 250);
+          let count = target;
+          function newRound() {
+            target = rnd(100, 250);
+            count = rnd(1, 3);
+            if (av1 && av2) {
+              const i = rnd(0, avColors.length - 1);
+              let j = rnd(0, avColors.length - 1);
+              if (j === i) j = (j + 1) % avColors.length;
+              av1.style.background = avColors[i];
+              av2.style.background = avColors[j];
+              av1.innerHTML = cartoonAvatar();
+              av2.innerHTML = cartoonAvatar();
+            }
           }
-
-          if (av1 && av2) {
-            av1.innerHTML = cartoonAvatar();
-            av2.innerHTML = cartoonAvatar();
-          }
-          countEl.textContent = formatCount(count);
-
+          if (av1 && av2) { av1.innerHTML = cartoonAvatar(); av2.innerHTML = cartoonAvatar(); }
+          countEl.textContent = count;
           setInterval(() => {
-            const isNewRound = currentRoundId !== seenRound;
-            const enteredCountdown = gameState === 'WAITING' && lastGameState !== 'WAITING';
-
-            if (isNewRound || enteredCountdown) {
-              const isFirst = seenRound === null;
+            if (currentRoundId !== seenRound) {
+              const first = seenRound === null;
               seenRound = currentRoundId;
-              lastGameState = gameState;
-
-              if (gameState === 'WAITING' || !isFirst) {
-                startNewCountdown();
-              } else {
-                // If loaded during active round, stay steady at realistic count
-                count = rnd(160, 255);
-                countEl.textContent = formatCount(count);
-              }
-              return;
+              if (gameState === 'WAITING' || !first) newRound();
+              else { target = rnd(100, 250); count = target; }
             }
-
-            lastGameState = gameState;
-
-            // ১. কাউন্টডাউন চলাকালীন সংখ্যা স্বাভাবিক বিরতিতে বাস্তবসম্মতভাবে বৃদ্ধি ও ওঠানামা করবে
             if (gameState === 'WAITING') {
-              if (typeof countdownProgress === 'number' && countdownProgress > 0) {
-                const expected = Math.round(10 + (target - 10) * Math.min(1, countdownProgress));
-                const delta = expected - count;
-                let step = 0;
-                if (delta > 0) {
-                  const r = Math.random();
-                  if (r < 0.10 && count > 15) step = -rnd(1, 2); // occasional cancel
-                  else if (r < 0.20) step = 0; // brief pause
-                  else if (r < 0.65) step = rnd(3, 7); // steady bets
-                  else step = rnd(8, 16); // burst of bets
-                } else {
-                  step = Math.random() < 0.25 ? rnd(-2, 2) : 0;
-                }
-                count = Math.max(8, count + step);
-              } else {
-                if (count < target) {
-                  const r = Math.random();
-                  let step = 0;
-                  if (r < 0.10 && count > 15) step = -rnd(1, 2);
-                  else if (r < 0.20) step = 0;
-                  else if (r < 0.65) step = rnd(3, 8);
-                  else step = rnd(9, 16);
-                  count = Math.max(8, Math.min(target, count + step));
-                } else if (Math.random() < 0.25) {
-                  count = Math.max(8, count + rnd(-2, 2));
-                }
+              if (count < target) {
+                const avg = target / 36;
+                let step = rnd(0, Math.round(avg * 2));
+                if (Math.random() < 0.12) step += rnd(4, 12);
+                count = Math.min(target, count + step);
               }
-              countEl.textContent = formatCount(count);
+            } else if (gameState === 'FLYING') {
+              if (Math.random() < 0.3) count = Math.max(1, count + rnd(-2, 2));
             }
-            // ২. কাউন্টডাউন শেষ (FLYING) বা ক্র্যাশ (CRASHED) হলে সংখ্যা সম্পূর্ণ স্থির থাকবে
-            // বিমানের রাউন্ড চলাকালীন সংখ্যাটি আর বাড়বে বা কমবে না।
+            countEl.textContent = count;
           }, 250);
         })();
-
-        // Keep public online table displaying sample players without exposing user details
-        function addUserBetRow() {}
-        function highlightUserBetWon() {}
 
         function addHistoryPill(val) {
           const bar = document.getElementById('historyBar');
@@ -2129,7 +2038,6 @@
             setAmt(panels[p].amount + panels[p].step);
           };
 
-          // Presets
           document.querySelectorAll(`.preset-btn[data-p="${p}"]`).forEach((btn) => {
             btn.onclick = () => {
               if (gameState === 'FLYING' || panels[p].placed) return;
@@ -2140,18 +2048,15 @@
             };
           });
 
-          // Action button (BET / CASH OUT / CANCEL)
           const btnAct = document.getElementById('btnAction' + p);
           if (btnAct) btnAct.onclick = () => {
             if (gameState === 'FLYING') {
               triggerCashout(p);
             } else if (gameState === 'WAITING') {
-              // Ignore double clicks / repeated requests while one is in flight
               if (panels[p].busy) return;
               panels[p].busy = true;
               const round = currentRoundId;
               if (panels[p].placed) {
-                // Cancel: refund once via server
                 executeCancelTransaction(p, round).then((ok) => {
                   if (ok) panels[p].placed = false;
                 }).finally(() => {
@@ -2159,7 +2064,6 @@
                   updatePanelUI(p);
                 });
               } else {
-                // Place Bet with Authoritative Server
                 executeBetTransaction(p, panels[p].amount, round).then((ok) => {
                   if (ok) panels[p].placed = true;
                 }).finally(() => {
@@ -2173,7 +2077,6 @@
             }
           };
 
-          // Tabs Bet/Auto
           const tabBet = document.getElementById('tabBet' + p);
           const tabAuto = document.getElementById('tabAuto' + p);
           const autoBar = document.getElementById('autoBar' + p);
@@ -2190,7 +2093,6 @@
             };
           }
 
-          // Checkboxes
           const chkAutoBet = document.getElementById('chkAutoBet' + p);
           const chkAutoCash = document.getElementById('chkAutoCash' + p);
           const autoCashBox = document.getElementById('autoCashBox' + p);
@@ -2226,11 +2128,9 @@
           if (!isM && gameState === 'FLYING') audio.startEngine();
         };
 
-        // Unlock audio on initial gesture
         window.addEventListener('click', () => audio.init(), { once: true });
         window.addEventListener('touchstart', () => audio.init(), { once: true });
 
-        // Initial table load
         populateTableBets();
       })();
     </script>
