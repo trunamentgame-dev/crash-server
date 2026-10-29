@@ -212,6 +212,21 @@
         color: #fff;
         z-index: 5;
       }
+      .pc-avatars { display: flex; align-items: center; }
+      .pc-av {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 1.5px solid #15171d;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        overflow: hidden;
+        transition: background 0.4s;
+      }
+      .pc-av + .pc-av { margin-left: -6px; }
+      .pc-av { font-size: 11px; line-height: 1; align-items: center; }
+      .pc-av svg { width: 100%; height: 100%; display: block; }
 
       /* Bet Panels */
       .panels-container {
@@ -447,6 +462,20 @@
         background: #181a20;
         border: 1px solid #23262f;
       }
+      .bet-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+      .bet-av {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 20px;
+        border-radius: 50%;
+        display: flex;
+        justify-content: center;
+        overflow: hidden;
+        font-size: 13px;
+        line-height: 1;
+        align-items: center;
+      }
+      .bet-av svg { width: 100%; height: 100%; display: block; }
       .bet-row.user-row {
         background: #1e1c15;
         border-color: rgba(251, 191, 36, 0.7);
@@ -515,8 +544,11 @@
       <div class="arena-box">
         <canvas id="flightCanvas"></canvas>
         <div class="player-counter">
-          <span>👥</span>
-          <span id="playerCount">148</span>
+          <span class="pc-avatars">
+            <span class="pc-av" id="pcAv1" style="background:#e11d48;"></span>
+            <span class="pc-av" id="pcAv2" style="background:#2563eb;"></span>
+          </span>
+          <span id="playerCount">0</span>
         </div>
       </div>
 
@@ -808,36 +840,13 @@
             if (!el) {
               el = document.createElement('div');
               el.id = 'gameMsgToast';
-              el.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);background:rgba(15,23,42,.45);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);color:#fff;border:1px solid rgba(245,158,11,.7);padding:8px 14px;border-radius:10px;font:600 12px sans-serif;z-index:99999;max-width:90%;text-align:center;';
+              el.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);background:rgba(15,23,42,.95);color:#fff;border:1px solid #f59e0b;padding:8px 14px;border-radius:10px;font:600 12px sans-serif;z-index:99999;max-width:90%;text-align:center;';
               document.body.appendChild(el);
             }
             el.textContent = text;
             el.style.display = 'block';
             clearTimeout(el._t);
             el._t = setTimeout(() => { el.style.display = 'none'; }, 3500);
-          } catch (e) {}
-        }
-        // Green banner on top of the screen: "Withdraw Success 125 ৳"
-        function showCashoutSuccess(amount) {
-          try {
-            const n = Number(amount) || 0;
-            const txt = n.toLocaleString('en-US', { maximumFractionDigits: 2 });
-            let el = document.getElementById('cashoutSuccessBanner');
-            if (!el) {
-              el = document.createElement('div');
-              el.id = 'cashoutSuccessBanner';
-              el.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 8px);transform:translate(-50%,-140%);' +
-                'background:rgba(22,163,74,.38);-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);color:#fff;padding:10px 22px;border-radius:12px;text-shadow:0 1px 3px rgba(0,0,0,.5);' +
-                "font:800 15px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.3px;z-index:100000;white-space:nowrap;" +
-                'box-shadow:0 6px 22px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.3);' +
-                'transition:transform .3s ease;pointer-events:none;';
-              document.body.appendChild(el);
-            }
-            el.textContent = 'Withdraw Success ' + txt + ' ৳';
-            void el.offsetWidth;
-            el.style.transform = 'translate(-50%,0)';
-            clearTimeout(el._t);
-            el._t = setTimeout(() => { el.style.transform = 'translate(-50%,-140%)'; }, 2800);
           } catch (e) {}
         }
         const ERR_TEXT = {
@@ -954,21 +963,6 @@
           }
         });
 
-        // Keep the phone screen awake while the game is open (Screen Wake Lock)
-        (function keepScreenAwake() {
-          let lock = null;
-          async function acquire() {
-            try {
-              if (!('wakeLock' in navigator) || document.visibilityState !== 'visible' || lock) return;
-              lock = await navigator.wakeLock.request('screen');
-              lock.addEventListener('release', () => { lock = null; });
-            } catch (e) { lock = null; }
-          }
-          acquire();
-          document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') acquire(); });
-          ['touchstart', 'click', 'keydown'].forEach((ev) => window.addEventListener(ev, acquire, { passive: true }));
-        })();
-
         // 4. Global State Synchronization via Server SSE / RTDB
         let gameState = 'WAITING'; // 'WAITING' | 'FLYING' | 'CRASHED'
         let currentRoundId = 'rnd_' + Date.now();
@@ -1018,10 +1012,7 @@
             } else {
               processedKeys.delete(idempotencyKey);
               console.warn('BET FAILED', data);
-              // "Betting time is over / wait for next round" notices are intentionally not shown
-              if (data.error !== 'BETTING_CLOSED' && data.error !== 'ROUND_CHANGED') {
-                showGameMsg(ERR_TEXT[data.error] || ('বাজি ব্যর্থ: ' + (data.error || 'unknown')));
-              }
+              showGameMsg(ERR_TEXT[data.error] || ('বাজি ব্যর্থ: ' + (data.error || 'unknown')));
               return false;
             }
           } catch(e) {
@@ -1094,7 +1085,6 @@
               st.mult = data.multiplier;
               if (typeof data.balance === 'number') updateBalanceUI(data.balance);
               updatePanelUI(panel);
-              showCashoutSuccess(data.winAmount);
             } else {
               // REJECTED (e.g. REJECTED_PAYOUT_LIMIT or round crashed)
               // STRICT RULE: No alert, no popup, no toast, no error message!
@@ -1725,6 +1715,33 @@
         const bots = ['d***5', 'r***8', 's***2', 'k***9', 'm***7', 'a***4', 't***1', 'b***3', 'z***0', 'h***6', 'p***9', 'n***2'];
         let activeBotBets = [];
 
+        // Cartoon boy/girl avatar generator (inline SVG, no external images)
+        function cartoonAvatar() {
+          const pick = (a) => a[Math.floor(Math.random() * a.length)];
+          const skin = pick(['#f5d0b0', '#e9b98f', '#d9a074', '#c68642', '#a9703f', '#8d5524']);
+          const hair = pick(['#1b1b1b', '#3b2314', '#5a3825', '#8a5a2b', '#c9a227', '#b5452b', '#2c2c54']);
+          const shirt = pick(['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#06b6d4', '#ec4899', '#f97316']);
+          const girl = Math.random() < 0.5;
+          const longHair = girl
+            ? '<path d="M8 40V21C8 9 14 5 20 5s12 4 12 16v19z" fill="' + hair + '"/>'
+            : '';
+          const topHair = girl
+            ? '<path d="M11 19c0-8 4-11 9-11s9 3 9 11c-3-4-6-5-9-5s-6 1-9 5z" fill="' + hair + '"/>'
+            : (Math.random() < 0.5
+              ? '<path d="M11 18c0-7 4-10 9-10s9 3 9 10c-2-3-5-4-9-4s-7 1-9 4z" fill="' + hair + '"/>'
+              : '<path d="M11 19c-1-9 4-12 9-12s10 3 9 12c-1-3-3-5-5-5-3 1-8 1-13 0-.6 1-.9 3-.9 5z" fill="' + hair + '"/>');
+          return '<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">'
+            + longHair
+            + '<path d="M6 40c0-8 6-12 14-12s14 4 14 12z" fill="' + shirt + '"/>'
+            + '<rect x="17" y="24" width="6" height="6" rx="2" fill="' + skin + '"/>'
+            + '<circle cx="20" cy="19" r="9" fill="' + skin + '"/>'
+            + topHair
+            + '<circle cx="16.5" cy="19.5" r="1.1" fill="#222"/>'
+            + '<circle cx="23.5" cy="19.5" r="1.1" fill="#222"/>'
+            + '<path d="M16.8 23c1.8 1.8 4.6 1.8 6.4 0" stroke="#7a2e2e" stroke-width="1.2" fill="none" stroke-linecap="round"/>'
+            + '</svg>';
+        }
+
         function populateTableBets() {
           const rows = document.getElementById('tableRows');
           if (!rows) return;
@@ -1732,7 +1749,9 @@
           activeBotBets = bots.map((name, i) => {
             const betAmt = [10, 20, 50, 100, 200, 500][Math.floor(Math.random() * 6)];
             const targetM = Number((1.1 + Math.random() * 4.5).toFixed(2));
-            return { name, betAmt, targetM, cashed: false };
+            const avColors = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#475569'];
+            const color = avColors[Math.floor(Math.random() * avColors.length)];
+            return { name, betAmt, targetM, color, avatar: cartoonAvatar(), cashed: false };
           });
 
           activeBotBets.forEach((b, idx) => {
@@ -1740,7 +1759,7 @@
             div.className = 'bet-row';
             div.id = 'botRow_' + idx;
             div.innerHTML = `
-              <span>${b.name}</span>
+              <span class="bet-name"><span class="bet-av" style="background:${b.color};">${b.avatar}</span><span>${b.name}</span></span>
               <span style="text-align:right; font-weight:700;">৳${b.betAmt}</span>
               <span style="text-align:center; color:#6b7280;" id="botX_${idx}">-</span>
               <span style="text-align:right; color:#6b7280;" id="botWin_${idx}">-</span>
@@ -1767,6 +1786,53 @@
             }
           });
         }
+
+        // Live players counter: climbs randomly (1 -> 100~250) during countdown
+        (function () {
+          const countEl = document.getElementById('playerCount');
+          const av1 = document.getElementById('pcAv1');
+          const av2 = document.getElementById('pcAv2');
+          if (!countEl) return;
+          const avColors = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#475569'];
+          const rnd = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
+          let seenRound = null;
+          let target = rnd(100, 250);
+          let count = target;
+          function newRound() {
+            target = rnd(100, 250);
+            count = rnd(1, 3);
+            if (av1 && av2) {
+              const i = rnd(0, avColors.length - 1);
+              let j = rnd(0, avColors.length - 1);
+              if (j === i) j = (j + 1) % avColors.length;
+              av1.style.background = avColors[i];
+              av2.style.background = avColors[j];
+              av1.innerHTML = cartoonAvatar();
+              av2.innerHTML = cartoonAvatar();
+            }
+          }
+          if (av1 && av2) { av1.innerHTML = cartoonAvatar(); av2.innerHTML = cartoonAvatar(); }
+          countEl.textContent = count;
+          setInterval(() => {
+            if (currentRoundId !== seenRound) {
+              const first = seenRound === null;
+              seenRound = currentRoundId;
+              if (gameState === 'WAITING' || !first) newRound();
+              else { target = rnd(100, 250); count = target; }
+            }
+            if (gameState === 'WAITING') {
+              if (count < target) {
+                const avg = target / 36;
+                let step = rnd(0, Math.round(avg * 2));
+                if (Math.random() < 0.12) step += rnd(4, 12); // small bursts
+                count = Math.min(target, count + step);
+              }
+            } else if (gameState === 'FLYING') {
+              if (Math.random() < 0.3) count = Math.max(1, count + rnd(-2, 2));
+            }
+            countEl.textContent = count;
+          }, 250);
+        })();
 
         // Keep public online table displaying sample players without exposing user details
         function addUserBetRow() {}
